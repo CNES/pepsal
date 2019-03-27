@@ -11,7 +11,6 @@ that directly copy data between the two sockets.
 
 The PEPsal is classified as an integrated PEP, since it runs only on a single linux box that 
 normally forwards packet between two or more networks, and can select which connections have to
-Please Refer to COPYING for license.
 be enhanced by means of netfilter.
 
 The application is written in C with the use of shared memory library and netfilter ipqueue 

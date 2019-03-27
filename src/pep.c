@@ -71,6 +71,8 @@ static int pending_conn_lifetime = PEP_PENDING_CONN_LIFETIME;
 static int portnum = PEP_DEFAULT_PORT;
 static int max_conns = (PEP_MIN_CONNS + PEP_MAX_CONNS) / 2;
 static char pepsal_ip_addr[20] = "0.0.0.0";
+static int snat = 0;
+static char snat_addr[20] = "0.0.0.0";
 
 /*
  * The main aim of this structure is to reduce search time
@@ -727,7 +729,11 @@ void *listener_loop(void UNUSED(*unused))
             pep_error("Failed to set IP_TRANSPARENT option! [RET = %d]", ret);
         }
 
-        toip(ipbuf, proxy->src.addr);
+        if (!snat)
+        	toip(ipbuf, proxy->src.addr);
+        else
+        	strncpy(ipbuf, snat_addr, 19);
+
         toip(ipbuf1, proxy->dst.addr);
         memset(&proxy_servaddr, 0, sizeof(proxy_servaddr));
         proxy_servaddr.sin_family = AF_INET;
@@ -1141,10 +1147,11 @@ int main(int argc, char *argv[])
             {"gcc_interval", 1, 0, 'g'},
             {"plifetime", 1, 0,'t'},
             {"conns", 1, 0, 'c'},
+			{"snat", 1, 0, 's'},
             {0, 0, 0, 0}
         };
 
-        c = getopt_long(argc, argv, "dvVhfp:a:l:g:t:c:",
+        c = getopt_long(argc, argv, "dvVhfp:a:l:g:t:c:s:",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -1185,6 +1192,10 @@ int main(int argc, char *argv[])
                 }
 
                 break;
+            case 's':
+            	snat = 1;
+            	strncpy(snat_addr, optarg, 19);
+            	break;
             case 'V':
                 printf("PEPSal ver. %s\n", VERSION);
                 exit(0);

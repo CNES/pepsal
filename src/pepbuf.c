@@ -16,6 +16,9 @@
 #include "pepdefs.h"
 #include "pepsal.h"
 #include "pepbuf.h"
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif
 
 int pepbuf_init(struct pep_buffer *pbuf)
 {
