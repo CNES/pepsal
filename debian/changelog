@@ -1,3 +1,9 @@
+pepsal (1.9.1) trusty; urgency=low
+
+  * Removed useless bind on proxy local socket
+
+ -- OpenSAND Maintainers <admin@opensand.org>  Thu, 11 Apr 2019 15:52:38 +0200
+
 pepsal (1.9.0) trusty; urgency=low
 
   * Added support for TCP FastOpen and TPROXY
