@@ -1089,7 +1089,7 @@ static void create_threads_pool(int num_threads)
 
 int main(int argc, char *argv[])
 {
-    int c, ret, numfds;
+    int c, ret, numfds, peppool_threads = PEPPOOL_THREADS;
     void *valptr;
     sigset_t sigset;
 
@@ -1109,10 +1109,11 @@ int main(int argc, char *argv[])
             {"plifetime", 1, 0,'t'},
             {"conns", 1, 0, 'c'},
 			{"snat", 1, 0, 's'},
-            {0, 0, 0, 0}
+			{"threads", 1, 0, 'T'},
+            {0, },
         };
 
-        c = getopt_long(argc, argv, "dvVhfp:a:l:g:t:c:s:",
+        c = getopt_long(argc, argv, "dvVhfp:a:l:g:t:c:s:T:",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -1157,6 +1158,9 @@ int main(int argc, char *argv[])
             	snat = 1;
             	strncpy(snat_addr, optarg, 19);
             	break;
+            case 'T':
+            	peppool_threads = atoi(optarg);
+            	break;
             case 'V':
                 printf("PEPSal ver. %s\n", VERSION);
                 exit(0);
@@ -1186,7 +1190,7 @@ int main(int argc, char *argv[])
 
     init_pep_queues();
     init_pep_threads();
-    create_threads_pool(PEPPOOL_THREADS);
+    create_threads_pool(peppool_threads);
 
     PEP_DEBUG("Pepsal started...");
     pthread_join(listener, &valptr);
