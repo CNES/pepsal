@@ -147,6 +147,8 @@ static pthread_t *workers = NULL;
                __buf, (proxy)->src.port, ##args);                   \
     }
 
+#define TABLE_SIZE(_a) ((sizeof((_a)[0]))?sizeof(_a)/sizeof((_a)[0]):0)
+
 static void __pep_error(const char *function, int line, const char *fmt, ...)
 {
     va_list ap;
@@ -196,19 +198,19 @@ static void usage(char *name)
 
 /*
  * Check if error @err is related to nonblocking I/O.
- * If it is in a set of nonblocking erros, it may handled
+ * If it is in a set of nonblocking errors, it may handled
  * properly without program termination.
  */
 static int nonblocking_err_p(int err)
 {
-    static int nb_errs[] = {
+    const int nb_errs[] = {
         EAGAIN,
         EINPROGRESS,
         EALREADY,
     };
     int i;
 
-    for (i = 0; i < sizeof(nb_errs); i++) {
+    for (i = 0; i < TABLE_SIZE(nb_errs); i++) {
         if (err == nb_errs[i])
             return 1;
     }
