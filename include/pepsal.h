@@ -13,8 +13,8 @@
 #ifndef __PEPSAL_H
 #define __PEPSAL_H
 
+#include <sys/types.h>
 #include "pepdefs.h"
-#include "pepbuf.h"
 #include "atomic.h"
 #include "list.h"
 
@@ -34,14 +34,25 @@ enum proxy_status {
 
 struct pep_proxy;
 
+struct pep_pipes {
+	union {
+		int fds[2];
+		struct {
+			int out;
+			int in;
+		};
+	};
+};
+
 struct pep_endpoint{
 	int addr;
 	unsigned short port;
     int fd;
-    struct pep_buffer buf;
+    struct pep_pipes buf;
     struct pep_proxy *owner;
     unsigned short poll_events;
     unsigned char iostat;
+    int delta;
 };
 
 #define PROXY_ENDPOINTS 2

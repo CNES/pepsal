@@ -10,6 +10,7 @@
  *
  */
 
+#define _GNU_SOURCE
 #include "config.h"
 #include "pepsal.h"
 #include "pepqueue.h"
@@ -21,7 +22,6 @@
 #include <sys/types.h>
 #include <sys/user.h>
 
-#define __USE_XOPEN_EXTENDED
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -48,6 +48,10 @@
 #include <syslog.h>
 
 #include <sys/time.h>
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE (1 << 12)
+#endif
 
 /*
  * Data structure to fill with packet headers when we
@@ -357,9 +361,8 @@ static void destroy_proxy(struct pep_proxy *proxy)
             fcntl(proxy->endpoints[i].fd, F_SETFL, O_SYNC);
             close(proxy->endpoints[i].fd);
         }
-        if (pepbuf_initialized(&proxy->endpoints[i].buf)) {
-            pepbuf_deinit(&proxy->endpoints[i].buf);
-        }
+		close(proxy->endpoints[i].buf.in);
+		close(proxy->endpoints[i].buf.out);
     }
 
 out:
@@ -412,13 +415,13 @@ static ssize_t pep_receive(struct pep_endpoint *endp)
     int iostat;
     ssize_t rb;
 
-    if (endp->iostat & (PEP_IORDONE | PEP_IOERR | PEP_IOEOF) ||
-        pepbuf_full(&endp->buf)) {
+    if (endp->iostat & (PEP_IOERR | PEP_IOEOF)) {
         return 0;
     }
 
-    rb = read(endp->fd, PEPBUF_RPOS(&endp->buf),
-              PEPBUF_SPACE_LEFT(&endp->buf));
+    rb = splice(endp->fd, NULL, endp->buf.in, NULL, PAGE_SIZE,
+    		SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
+
     if (rb < 0) {
         if (nonblocking_err_p(errno)) {
             endp->iostat |= PEP_IORDONE;
@@ -432,8 +435,6 @@ static ssize_t pep_receive(struct pep_endpoint *endp)
         endp->iostat |= PEP_IOEOF;
         return 0;
     }
-
-    pepbuf_update_rpos(&endp->buf, rb);
     return rb;
 }
 
@@ -441,13 +442,13 @@ static ssize_t pep_send(struct pep_endpoint *from, int to_fd)
 {
     ssize_t wb;
 
-    if (from->iostat & (PEP_IOERR | PEP_IOWDONE) ||
-        (pepbuf_empty(&from->buf) && !(from->iostat & PEP_IOEOF))) {
+    if (from->iostat & (PEP_IOERR | PEP_IOWDONE)) {
         return 0;
     }
 
-    wb = write(to_fd, PEPBUF_WPOS(&from->buf),
-               PEPBUF_SPACE_FILLED(&from->buf));
+    wb = splice(from->buf.out, NULL, to_fd, NULL, PAGE_SIZE,
+    		SPLICE_F_MOVE | SPLICE_F_MORE| SPLICE_F_NONBLOCK);
+
     if (wb < 0) {
         if (nonblocking_err_p(errno)) {
             from->iostat |= PEP_IOWDONE;
@@ -457,8 +458,6 @@ static ssize_t pep_send(struct pep_endpoint *from, int to_fd)
         from->iostat |= PEP_IOERR;
         return -1;
     }
-
-    pepbuf_update_wpos(&from->buf, wb);
     return wb;
 }
 
@@ -468,8 +467,8 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
 
     rb = wb = 1;
     while ((wb > 0) || (rb > 0)) {
-        rb = pep_receive(from);
-        wb = pep_send(from, to->fd);
+        from->delta += rb = pep_receive(from);
+        from->delta -= wb = pep_send(from, to->fd);
     }
 
     if (from->iostat & PEP_IOERR) {
@@ -478,9 +477,9 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
 
     /*
      * Receiving buffer has no space or EOF was reached from the peer.
-     * Stop wait for incomming data on this FD.
+     * Stop wait for incoming data on this FD.
      */
-    if (pepbuf_full(&from->buf) || (from->iostat & PEP_IOEOF)) {
+    if ((from->delta > 0) || (from->iostat & PEP_IOEOF)) {
         from->poll_events &= ~POLLIN;
     }
     else if (from->iostat & PEP_IORDONE) {
@@ -491,10 +490,9 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
      * All available data was transmitted to the peer
      * Stop wait when FD will be ready for write.
      */
-    if (pepbuf_empty(&from->buf)) {
+    if (from->delta == 0) {
         to->poll_events &= ~POLLOUT;
-    }
-    else { /* There exists some data to write. Wait until we can transmit it. */
+    } else { /* There exists some data to write. Wait until we can transmit it. */
         to->poll_events |= POLLOUT;
     }
 }
@@ -753,8 +751,8 @@ void *listener_loop(void UNUSED(*unused))
         }
 
         if (fastopen) {
-          ret = sendto(out_fd, PEPBUF_WPOS(&proxy->src.buf), 0, MSG_FASTOPEN,
-                       (struct sockaddr *)&r_servaddr, sizeof(r_servaddr));
+        	ret = splice(proxy->src.buf.out, NULL, out_fd, NULL, PAGE_SIZE,
+        			SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
         }
         else {
           ret = connect(out_fd, (struct sockaddr *)&r_servaddr,
@@ -929,14 +927,15 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
                         break;
                     }
 
-                    ret = pepbuf_init(&proxy->src.buf);
+                    ret = pipe2(proxy->src.buf.fds, O_NONBLOCK);
                     if (ret < 0) {
                         pep_error("Failed to allocate PEP IN buffer!");
                     }
 
-                    ret = pepbuf_init(&proxy->dst.buf);
+                    ret = pipe2(proxy->dst.buf.fds, O_NONBLOCK);
                     if (ret < 0) {
-                        pepbuf_deinit(&proxy->src.buf);
+                        close(proxy->src.buf.in);
+                        close(proxy->src.buf.out);
                         pep_error("Failed to allocate PEP OUT buffer!");
                     }
 
@@ -1006,7 +1005,7 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
                 endp = &proxy->endpoints[i];
                 iostat = endp->iostat;
                 if ((iostat & PEP_IOERR) ||
-                    ((iostat & PEP_IOEOF) && pepbuf_empty(&endp->buf))) {
+                    (iostat & PEP_IOEOF)) {
                     list_del(&proxy->qnode);
                     destroy_proxy(proxy);
                     break;
