@@ -67,7 +67,7 @@ int syntab_init(int num_conns)
     int ret, hash_size;
 
     memset(&syntab, 0, sizeof(syntab));
-    hash_size = (num_conns * 25) / 100; /* ~25% of max number of connections */
+    hash_size = (num_conns * 125) / 100; /* ~125% of max number of connections */
     syntab.hash = create_hashtable(hash_size, syntab_hashfunction, __keyeqfn);
     if (!syntab.hash) {
         ret = ENOMEM;
