@@ -13,6 +13,7 @@
 #ifndef __PEPSAL_H
 #define __PEPSAL_H
 
+#include <sys/epoll.h>
 #include <sys/types.h>
 #include "pepdefs.h"
 #include "atomic.h"
@@ -50,7 +51,7 @@ struct pep_endpoint{
     int fd;
     struct pep_pipes buf;
     struct pep_proxy *owner;
-    unsigned short poll_events;
+    struct epoll_event epoll_event;
     unsigned char iostat;
     int delta;
 };

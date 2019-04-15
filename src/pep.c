@@ -41,7 +41,7 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 
-#include <sys/poll.h>
+#include <sys/epoll.h>
 #include <string.h>
 #include <time.h>
 #include <signal.h>
@@ -79,21 +79,9 @@ static int snat = 0;
 static char snat_addr[20] = "0.0.0.0";
 
 /*
- * The main aim of this structure is to reduce search time
- * of pep_proxy instance corresponding to the returned by poll()
- * file descriptor. Typically to find pep_proxy by one of its FDs
- * takes linear time(because pep_proxys are arranged into one list),
- * but this structure reduce search time to O(1).
- * pollfds is an array of file descriptors and events used by poll.
- * pdescrs is an array of pointers to corresponding pep_endpoint entries.
- * Each Ith FD corresponds to Ith pep_proxy. Both array have the same
- * size equal to num_pollfds items.
+ * file descriptor for epoll
  */
-static struct {
-    struct pollfd        *pollfds;
-    struct pep_endpoint **endpoints;
-    int                   num_pollfds;
-} poll_resources;
+int epoll_fd;
 
 /*
  * PEP logger dumps all connections in the syn table to
@@ -293,7 +281,7 @@ static void setup_socket(int fd)
     PEP_DEBUG("Socket %d: Setting up timeouts and syncronous mode.", fd);
 }
 
-#define ENDPOINT_POLLEVENTS (POLLIN | POLLHUP | POLLERR | POLLNVAL)
+#define ENDPOINT_EPOLLEVENTS (EPOLLIN | EPOLLHUP | EPOLLERR)
 static struct pep_proxy *alloc_proxy(void)
 {
     struct pep_proxy *proxy = calloc(1, sizeof(*proxy));
@@ -314,8 +302,9 @@ static struct pep_proxy *alloc_proxy(void)
         endp = &proxy->endpoints[i];
         endp->fd = -1;
         endp->owner = proxy;
+        endp->epoll_event.data.ptr = endp;
         endp->iostat = 0;
-        endp->poll_events = ENDPOINT_POLLEVENTS;
+        endp->epoll_event.events = ENDPOINT_EPOLLEVENTS;
     }
 
     return proxy;
@@ -359,6 +348,9 @@ static void destroy_proxy(struct pep_proxy *proxy)
     for (i = 0; i < PROXY_ENDPOINTS; i++) {
         if (proxy->endpoints[i].fd >= 0) {
             fcntl(proxy->endpoints[i].fd, F_SETFL, O_SYNC);
+        	epoll_ctl(epoll_fd, EPOLL_CTL_DEL,
+        			proxy->endpoints[i].fd,
+					&proxy->endpoints[i].epoll_event);
             close(proxy->endpoints[i].fd);
         }
 		close(proxy->endpoints[i].buf.in);
@@ -464,6 +456,7 @@ static ssize_t pep_send(struct pep_endpoint *from, int to_fd)
 static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
 {
     ssize_t rb, wb;
+    int ret;
 
     rb = wb = 1;
     while ((wb > 0) || (rb > 0)) {
@@ -480,10 +473,14 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
      * Stop wait for incoming data on this FD.
      */
     if ((from->delta > 0) || (from->iostat & PEP_IOEOF)) {
-        from->poll_events &= ~POLLIN;
+        from->epoll_event.events &= ~EPOLLIN;
     }
     else if (from->iostat & PEP_IORDONE) {
-        from->poll_events |= POLLIN;
+        from->epoll_event.events |= EPOLLIN;
+    }
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, from->fd, &from->epoll_event);
+    if (ret < 0) {
+    	pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 
     /*
@@ -491,9 +488,13 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
      * Stop wait when FD will be ready for write.
      */
     if (from->delta == 0) {
-        to->poll_events &= ~POLLOUT;
+        to->epoll_event.events &= ~EPOLLOUT;
     } else { /* There exists some data to write. Wait until we can transmit it. */
-        to->poll_events |= POLLOUT;
+    	to->epoll_event.events |= EPOLLOUT;
+    }
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, to->fd, &to->epoll_event);
+    if (ret < 0) {
+    	pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 }
 
@@ -764,7 +765,19 @@ void *listener_loop(void UNUSED(*unused))
         }
 
         proxy->src.fd = connfd;
+        ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connfd, &proxy->src.epoll_event);
+        if (ret < 0) {
+        	pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+        	goto close_connection;
+        }
+
         proxy->dst.fd = out_fd;
+        ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, out_fd, &proxy->dst.epoll_event);
+        if (ret < 0) {
+        	pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+        	goto close_connection;
+        }
+
         if (proxy->status == PST_CLOSED) {
             unpin_proxy(proxy);
             goto close_connection;
@@ -803,43 +816,6 @@ close_connection:
     pthread_exit(NULL);
 }
 
-static int prepare_poll_resources(void)
-{
-    struct pep_proxy *proxy;
-    struct pep_endpoint *endp;
-    struct pollfd *pfd;
-    int i, j;
-    enum proxy_status stat;
-
-    i = 0;
-    SYNTAB_LOCK_READ();
-    syntab_foreach_connection(proxy) {
-        /*
-         * Proxy status field may be changed from
-         * another thread(for example from listener thread)
-         * So to prevent conflicts we copy it to the @stat
-         * variable(reads are atomic) and only then compare the copy
-         * with our patterns.
-         */
-        stat = proxy->status;
-        if (stat == PST_PENDING || stat == PST_CLOSED)
-            continue;
-
-        for (j = 0; j < PROXY_ENDPOINTS; j++) {
-            endp = &proxy->endpoints[j];
-            pfd = &poll_resources.pollfds[i];
-            pfd->fd = endp->fd;
-            pfd->events = endp->poll_events;
-            pfd->revents = 0;
-            poll_resources.endpoints[i] = endp;
-            i++;
-        }
-    }
-
-    SYNTAB_UNLOCK_READ();
-    return i;
-}
-
 /* An empty signal handler. It only needed to interrupt poll() */
 static void poller_sighandler(int signo)
 {
@@ -848,10 +824,10 @@ static void poller_sighandler(int signo)
 
 static void *poller_loop(void  __attribute__((unused)) *unused)
 {
-    int pollret, num_works, i, num_clients, iostat;
+    int epollret, num_works, i, num_clients, iostat;
     struct pep_proxy *proxy;
     struct pep_endpoint *endp, *target;
-    struct pollfd *pollfd;
+    struct epoll_event *event, events[2 * max_conns];
     struct list_node *entry, *safe;
     struct list_head local_list;
     sigset_t sigset;
@@ -871,27 +847,8 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
     for (;;) {
         list_init_head(&local_list);
 
-        /*
-         * At first we prepare file descriptors of all existing
-         * connections in SYN table for poll. Whilie we're doing
-         * it some new connection may appear in listener thread.
-         * When listener accpets new connection and configures proxy
-         * relevant proxy, it sends the POLLER_NEWCONN_SIG signal
-         * to the poller thread. Thus while poller is busy with preparing
-         * descriptors for poll, POLLER_NEWCONN_SIG should be blocked.
-         * It performs poll() be preperly interrupted and renew descriptors.
-         */
-        sigprocmask(SIG_BLOCK, &sigset, NULL);
-        num_clients = prepare_poll_resources();
-        if (!num_clients) {
-            sigprocmask(SIG_UNBLOCK, &sigset, NULL);
-            sigwaitinfo(&sigset, NULL);
-        continue;
-        }
-
-        sigprocmask(SIG_UNBLOCK, &sigset, NULL);
-        pollret = poll(poll_resources.pollfds, num_clients, -1);
-        if (pollret < 0) {
+        epollret = epoll_wait(epoll_fd, events, 2 * max_conns, -1);
+        if (epollret < 0) {
             if (errno == EINTR) {
                 /* It seems that new client just appered. Renew descriptors. */
         continue;
@@ -899,22 +856,24 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
 
             pep_error("poll() error!");
         }
-        else if (pollret == 0) {
+        else if (epollret == 0) {
             continue;
         }
 
         num_works = 0;
-        for (i = 0; i < num_clients; i++) {
-            pollfd = &poll_resources.pollfds[i];
-            if (!pollfd->revents) {
-                continue;
-            }
+        for (i = 0; i < epollret; i++) {
+         	event = &events[i];
+        	endp = (struct pep_endpoint *) event->data.ptr;
+            proxy = (struct pep_proxy *) endp->owner;
 
-            endp = poll_resources.endpoints[i];
-            proxy = endp->owner;
+        	if (!event->events) {
+        		continue;
+        	}
+
             if (proxy->enqueued) {
                 continue;
             }
+
             switch (proxy->status) {
                 case PST_CONNECT:
                 {
@@ -943,9 +902,10 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
                     setup_socket(proxy->src.fd);
                     setup_socket(proxy->dst.fd);
                 }
+                /* fall through */
                 case PST_OPEN:
                 {
-                    if (pollfd->revents & (POLLHUP | POLLERR | POLLNVAL)) {
+                    if (event->events & (EPOLLHUP | EPOLLERR)) {
                         if (proxy->enqueued) {
                             list_del(&proxy->qnode);
                         }
@@ -954,7 +914,7 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
                         continue;
                     }
 
-                    if (pollfd->revents & (POLLIN | POLLOUT)) {
+                    if (event->events & (EPOLLIN | EPOLLOUT)) {
                         list_add2tail(&local_list, &proxy->qnode);
                         num_works++;
                         proxy->enqueued = 1;
@@ -1217,19 +1177,7 @@ int main(int argc, char *argv[])
         pep_error("Failed to initialize SYN table!");
     }
 
-    poll_resources.num_pollfds = numfds = max_conns * 2;
-    poll_resources.pollfds = calloc(numfds, sizeof(struct pollfd));
-    if (!poll_resources.pollfds) {
-        pep_error("Failed to allocate %zd bytes for pollfds array!",
-                  numfds * sizeof(struct pollfd));
-    }
-
-    poll_resources.endpoints = calloc(numfds, sizeof(struct pep_endpoint *));
-    if (!poll_resources.endpoints) {
-        free(poll_resources.pollfds);
-        pep_error("Failed to allocate %zd bytes for pdescrs array!",
-                  numfds * sizeof(struct pep_endpoint *));
-    }
+    epoll_fd = epoll_create(max_conns * 2);
 
     sigemptyset(&sigset);
     sigaddset(&sigset, POLLER_NEWCONN_SIG);
@@ -1245,6 +1193,7 @@ int main(int argc, char *argv[])
     pthread_join(poller, &valptr);
     pthread_join(timer_sch, &valptr);
     PEP_DEBUG("exiting...\n");
+    close(epoll_fd);
     closelog();
     return 0;
 }
