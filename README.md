@@ -115,7 +115,7 @@ Using PEPSal alongside OpenSAND requires no specific configuration in order to w
 
 The image below depicts the architecture used.
 
-[Architecture OpenSAND](archi_opensand.png)
+![Architecture OpenSAND](archi_opensand.png)
 
 OpenSAND is installed on three machines, ST, GW and SAT. These machines are linked by the OpenSAND emulation network; when the emulation is running (on IP mode), the GW and ST are linked via a tunnel, through the interface *opensand_tun* on each of these machines. Two workstations are connected to the LAN networks of the ST and GW, and act as client and server, respectively.
 
@@ -159,7 +159,7 @@ Please refer to OpenBACH repository for more information.
 
 <details><summary>Deploy to see PEPSal design document</summary>
 
-[PEPSal architecture](pepsal_archi.png)
+![PEPSal architecture](pepsal_archi.png)
 
 ## Network level
 
