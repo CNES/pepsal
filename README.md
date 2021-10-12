@@ -21,16 +21,19 @@ It is designed to follow the advices in [IETF RFC3135](https://datatracker.ietf.
 
 <details><summary>Deploy to see how to install PEPSal</summary>
 
-Requirements
-Computers
+## Requirements
+
+### Computers
 
 PEPsal can be installed on any number of machines. If it installed on one side of a link, the TCP connections will be accelerated only in one way. If it is installed on both ends of the link (symmetrical PEP), the TCP connections will be accelerated both ways.
-Operating System
+
+### Operating System
 
 PEPsal is distributed in debian packages compatible with Ubuntu versions 14.04 and 16.04.
 
 For any other distribution/version, the source code is available for compilation.
-PEPsal installation
+
+## PEPsal installation
 
 PEPsal is distributed via debian packages, stored in the Net4Sat depository.
 
