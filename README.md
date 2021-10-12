@@ -26,7 +26,7 @@ TODO
 
 </details>
 
-# User manual
+# User manual 
 
 <details><summary>Deploy to see how to use PEPSal</summary>
 
