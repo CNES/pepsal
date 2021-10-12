@@ -1,7 +1,6 @@
 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 PEPsal: A TCP Performance Enhancing Proxy for satellite links
-http://www.sourceforge.net/projects/pepsal
 
 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -22,7 +21,35 @@ It is designed to follow the advices in [IETF RFC3135](https://datatracker.ietf.
 
 <details><summary>Deploy to see how to install PEPSal</summary>
 
-TODO
+Requirements
+Computers
+
+PEPsal can be installed on any number of machines. If it installed on one side of a link, the TCP connections will be accelerated only in one way. If it is installed on both ends of the link (symmetrical PEP), the TCP connections will be accelerated both ways.
+Operating System
+
+PEPsal is distributed in debian packages compatible with Ubuntu versions 14.04 and 16.04.
+
+For any other distribution/version, the source code is available for compilation.
+PEPsal installation
+
+PEPsal is distributed via debian packages, stored in the Net4Sat depository.
+
+To get these packages, add this repository to the APT sources list:
+
+On Ubuntu 14.04 LTS or lower
+
+> echo "deb http://packages.net4sat.org/opensand trusty stable" | sudo tee /etc/apt/sources.list.d/opensand.list
+
+On Ubuntu 16.04 LTS or upper
+
+> echo "deb http://packages.net4sat.org/opensand xenial stable" | sudo tee /etc/apt/sources.list.d/opensand.list
+
+Update the apt cache after adding the new repository, and install the pepsal package:
+
+> sudo apt-get update
+> sudo apt-get install pepsal
+
+After installation, PEPSal should be running in background as a service. 
 
 </details>
 
