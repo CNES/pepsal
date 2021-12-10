@@ -39,13 +39,9 @@ PEPsal is distributed via debian packages, stored in the Net4Sat depository.
 
 To get these packages, add this repository to the APT sources list:
 
-On Ubuntu 14.04 LTS or lower
-
-> echo "deb http://packages.net4sat.org/opensand trusty stable" | sudo tee /etc/apt/sources.list.d/opensand.list
-
 On Ubuntu 16.04 LTS or upper
 
-> echo "deb http://packages.net4sat.org/opensand xenial stable" | sudo tee /etc/apt/sources.list.d/opensand.list
+> echo "deb https://raw.githubusercontent.com/CNES/net4sat-packages/master/ focal stable" | sudo tee /etc/apt/sources.list.d/raw_githubusercontent_com_CNES_net4sat_packages_master.list  
 
 Update the apt cache after adding the new repository, and install the pepsal package:
 
