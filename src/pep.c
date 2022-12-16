@@ -733,7 +733,7 @@ void *listener_loop(void UNUSED(*unused))
         if (!snat)
         	toip(ipbuf, proxy->src.addr);
         else
-        	strncpy(ipbuf, snat_addr, 19);
+        	strncpy(ipbuf, snat_addr, sizeof(ipbuf)-1);
 
         toip(ipbuf1, proxy->dst.addr);
         memset(&proxy_servaddr, 0, sizeof(proxy_servaddr));

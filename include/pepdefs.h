@@ -8,7 +8,7 @@
 
 /* Minimal and maximal number of simultaneous connections */
 #define PEP_MIN_CONNS 128
-#define PEP_MAX_CONNS 4096
+#define PEP_MAX_CONNS 25000
 
 /* Default port number of pepsal listener */
 #define PEP_DEFAULT_PORT 5000
