@@ -19,6 +19,9 @@ default:
   tags:
     - Usine_Logicielle
 
+stages:
+  - delegate
+
 delegate_to_build_job:
   variables:
     BRANCH_NAME: $CI_COMMIT_REF_NAME
