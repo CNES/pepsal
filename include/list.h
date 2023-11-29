@@ -159,7 +159,7 @@ static __inline int list_node_prev_isbound(struct list_node *node)
  * @brief Remove first element of the list
  * @param lst - A pointer to the list
  */
-#define list_delfromhead(lst)					\
+#define list_delfromhead(lst)                   \
     list_del(list_node_first(lst))
 
 /**
@@ -167,7 +167,7 @@ static __inline int list_node_prev_isbound(struct list_node *node)
  * @brief Remove the last element of the list
  * @param list - A pointer to the list
  */
-#define list_delfromtail(lst)					\
+#define list_delfromtail(lst)                   \
     list_del(list_node_last(lst))
 
 /**

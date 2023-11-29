@@ -184,7 +184,8 @@ static void usage(char *name)
     fprintf(stderr,"Usage: %s [-V] [-h] [-v] [-d] [-f]"
             " [-a address] [-p port]"
             " [-c max_conn] [-l logfile] [-t proxy_lifetime]"
-            " [-g garbage collector interval]\n", name);
+            " [-g garbage collector interval]",
+            " [-s source NAT address] [-T worker threads count]\n", name);
     exit(EXIT_SUCCESS);
 }
 
@@ -348,13 +349,13 @@ static void destroy_proxy(struct pep_proxy *proxy)
     for (i = 0; i < PROXY_ENDPOINTS; i++) {
         if (proxy->endpoints[i].fd >= 0) {
             fcntl(proxy->endpoints[i].fd, F_SETFL, O_SYNC);
-        	epoll_ctl(epoll_fd, EPOLL_CTL_DEL,
-        			proxy->endpoints[i].fd,
-					&proxy->endpoints[i].epoll_event);
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL,
+                      proxy->endpoints[i].fd,
+                      &proxy->endpoints[i].epoll_event);
             close(proxy->endpoints[i].fd);
         }
-		close(proxy->endpoints[i].buf.in);
-		close(proxy->endpoints[i].buf.out);
+        close(proxy->endpoints[i].buf.in);
+        close(proxy->endpoints[i].buf.out);
     }
 
 out:
@@ -412,7 +413,7 @@ static ssize_t pep_receive(struct pep_endpoint *endp)
     }
 
     rb = splice(endp->fd, NULL, endp->buf.in, NULL, PAGE_SIZE,
-    		SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
+                SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
 
     if (rb < 0) {
         if (nonblocking_err_p(errno)) {
@@ -439,7 +440,7 @@ static ssize_t pep_send(struct pep_endpoint *from, int to_fd)
     }
 
     wb = splice(from->buf.out, NULL, to_fd, NULL, PAGE_SIZE,
-    		SPLICE_F_MOVE | SPLICE_F_MORE| SPLICE_F_NONBLOCK);
+                SPLICE_F_MOVE | SPLICE_F_MORE| SPLICE_F_NONBLOCK);
 
     if (wb < 0) {
         if (nonblocking_err_p(errno)) {
@@ -480,7 +481,7 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
     }
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, from->fd, &from->epoll_event);
     if (ret < 0) {
-    	pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
+        pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 
     /*
@@ -490,11 +491,11 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
     if (from->delta == 0) {
         to->epoll_event.events &= ~EPOLLOUT;
     } else { /* There exists some data to write. Wait until we can transmit it. */
-    	to->epoll_event.events |= EPOLLOUT;
+        to->epoll_event.events |= EPOLLOUT;
     }
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, to->fd, &to->epoll_event);
     if (ret < 0) {
-    	pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
+        pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 }
 
@@ -731,15 +732,15 @@ void *listener_loop(void UNUSED(*unused))
         }
 
         if (!snat)
-        	toip(ipbuf, proxy->src.addr);
+            toip(ipbuf, proxy->src.addr);
         else
-        	strncpy(ipbuf, snat_addr, 19);
+            strncpy(ipbuf, snat_addr, 19);
 
         toip(ipbuf1, proxy->dst.addr);
 
         if (fastopen) {
-        	ret = splice(proxy->src.buf.out, NULL, out_fd, NULL, PAGE_SIZE,
-        			SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
+            ret = splice(proxy->src.buf.out, NULL, out_fd, NULL, PAGE_SIZE,
+                         SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
         }
         else {
           ret = connect(out_fd, (struct sockaddr *)&r_servaddr,
@@ -753,15 +754,15 @@ void *listener_loop(void UNUSED(*unused))
         proxy->src.fd = connfd;
         ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connfd, &proxy->src.epoll_event);
         if (ret < 0) {
-        	pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
-        	goto close_connection;
+            pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+            goto close_connection;
         }
 
         proxy->dst.fd = out_fd;
         ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, out_fd, &proxy->dst.epoll_event);
         if (ret < 0) {
-        	pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
-        	goto close_connection;
+            pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+            goto close_connection;
         }
 
         if (proxy->status == PST_CLOSED) {
@@ -837,7 +838,7 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
         if (epollret < 0) {
             if (errno == EINTR) {
                 /* It seems that new client just appered. Renew descriptors. */
-        continue;
+                continue;
             }
 
             pep_error("poll() error!");
@@ -848,13 +849,13 @@ static void *poller_loop(void  __attribute__((unused)) *unused)
 
         num_works = 0;
         for (i = 0; i < epollret; i++) {
-         	event = &events[i];
-        	endp = (struct pep_endpoint *) event->data.ptr;
+            event = &events[i];
+            endp = (struct pep_endpoint *) event->data.ptr;
             proxy = (struct pep_proxy *) endp->owner;
 
-        	if (!event->events) {
-        		continue;
-        	}
+            if (!event->events) {
+                continue;
+            }
 
             if (proxy->enqueued) {
                 continue;
@@ -1091,11 +1092,11 @@ int main(int argc, char *argv[])
             {"version", 0, 0, 'V'},
             {"address", 1, 0, 'a'},
             {"logfile", 1, 0, 'l'},
-            {"gcc_interval", 1, 0, 'g'},
+            {"gc_interval", 1, 0, 'g'},
             {"plifetime", 1, 0,'t'},
             {"conns", 1, 0, 'c'},
-			{"snat", 1, 0, 's'},
-			{"threads", 1, 0, 'T'},
+            {"snat", 1, 0, 's'},
+            {"threads", 1, 0, 'T'},
             {0, },
         };
 
@@ -1141,12 +1142,12 @@ int main(int argc, char *argv[])
 
                 break;
             case 's':
-            	snat = 1;
-            	strncpy(snat_addr, optarg, 19);
-            	break;
+                snat = 1;
+                strncpy(snat_addr, optarg, 19);
+                break;
             case 'T':
-            	peppool_threads = atoi(optarg);
-            	break;
+                peppool_threads = atoi(optarg);
+                break;
             case 'V':
                 printf("PEPSal ver. %s\n", VERSION);
                 exit(0);

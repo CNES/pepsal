@@ -1,4 +1,3 @@
-
 /*
  * PEPsal : A Performance Enhancing Proxy for Satellite Links
  *
@@ -36,18 +35,18 @@ enum proxy_status {
 struct pep_proxy;
 
 struct pep_pipes {
-	union {
-		int fds[2];
-		struct {
-			int out;
-			int in;
-		};
-	};
+    union {
+        int fds[2];
+        struct {
+            int out;
+            int in;
+        };
+    };
 };
 
 struct pep_endpoint{
-	int addr;
-	unsigned short port;
+    int addr;
+    unsigned short port;
     int fd;
     struct pep_pipes buf;
     struct pep_proxy *owner;
@@ -59,7 +58,7 @@ struct pep_endpoint{
 #define PROXY_ENDPOINTS 2
 
 struct pep_proxy {
-	enum proxy_status status;
+    enum proxy_status status;
     struct list_node lnode;
     struct list_node qnode;
 

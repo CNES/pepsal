@@ -70,32 +70,28 @@ int syntab_init(int num_conns)
     hash_size = (num_conns * 125) / 100; /* ~125% of max number of connections */
     syntab.hash = create_hashtable(hash_size, syntab_hashfunction, __keyeqfn);
     if (!syntab.hash) {
-        ret = ENOMEM;
-        goto err;
+        errno = ENOMEM;
+        return -1;
     }
 
     ret = pthread_rwlock_init(&syntab.lock, NULL);
     if (ret) {
         ret = errno;
-        goto err_destroy_hash;
+        hashtable_destroy(syntab.hash, 0);
+        errno = ret;
+        return -1;
     }
 
     list_init_head(&syntab.conns);
     syntab.num_items = 0;
 
     return 0;
-
-err_destroy_hash:
-    hashtable_destroy(syntab.hash, 0);
-err:
-    errno = ret;
-    return -1;
 }
 
 static __inline void syntab_make_key(struct syntab_key *key,
                                      int addr, unsigned short port)
 {
-	memset(key, 0, sizeof(*key));
+    memset(key, 0, sizeof(*key));
     key->addr = addr;
     key->port = port;
 }
@@ -123,7 +119,7 @@ int syntab_add(struct pep_proxy *proxy)
         return -1;
     }
 
-	syntab_make_key(key, proxy->src.addr, proxy->src.port);
+    syntab_make_key(key, proxy->src.addr, proxy->src.port);
     ret = hashtable_insert(syntab.hash, key, proxy);
     if (ret == 0) {
         free(key);
