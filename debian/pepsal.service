@@ -5,8 +5,19 @@ After=systemd-journald-dev-log.socket
 
 [Service]
 Type=forking
-ExecStartPre=/etc/pepsal/pepsal-arguments
-ExecStart=/bin/sh -ac ". /etc/pepsal/.pepsal.conf ; sh /etc/pepsal/start.ini"
+Environment="port=5000"
+Environment="ip_address=0.0.0.0"
+Environment="max_conns=2112"
+Environment="gc_interval=54000"
+Environment="pending_lifetime=18000"
+Environment="fastopen=false"
+Environment="debug=true"
+Environment="snat="
+Environment="threads=10"
+Environment="log_file=/var/log/pepsal/connections.log"
+EnvironmentFile=/etc/pepsal/pepsal.conf
+ExecStartPre=/bin/sh -c 'mkdir -p $(dirname ${log_file})'
+ExecStart=/bin/sh -c '/usr/bin/pepsal -d $([ x"$debug" = x"true" ] && echo "-v") $([ x"$fastopen" = x"true" ] && echo "-f") -p ${port} -a ${ip_address} -c ${max_conns} -g ${gc_interval} -l ${log_file} -t ${pending_lifetime} ${snat:+-s $snat} -T ${threads}'
 
 [Install]
 WantedBy=multi-user.target

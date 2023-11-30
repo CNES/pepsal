@@ -3,13 +3,15 @@
 # Script to aid the configuration of iptables for use
 # with PEPSal
 
+
 DEFAULT_TABLE_NUMBER=100
+
 
 load-conf()
 {
 	# Load PEPSal conf
-	/etc/pepsal/pepsal-arguments
-	[ -r /etc/pepsal/.pepsal.conf ] && . /etc/pepsal/.pepsal.conf
+  port=5000
+	[ -r /etc/pepsal/pepsal.conf ] && . /etc/pepsal/pepsal.conf
 }
 
 route-table()
@@ -23,7 +25,7 @@ route-table()
 	fi
 	# Check if default route in table exists
 	RET=$(ip route list table ${TABLE} | grep default)
-	if [ "x$RET" = "x" ]
+	if [ x"$RET" = "x" ]
 	then
 		ip route add local 0.0.0.0/0 dev lo table ${TABLE}
 	else
@@ -35,20 +37,16 @@ addiface-iptables()
 {
 	# Check if the rule exists, otherwise, add it
 	IFACE=$1
-	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
-	iptables -A PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 || error 	
+	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
+	iptables -A PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error 	
 }
 
 deliface-iptables()
 {
-	# Check if the rule exists, otherwise, add it
+	# Check if the rule exists, then, delete it
 	IFACE=$1
-	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
-	iptables -D PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 || error 	
+	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null || exit 0
+	iptables -D PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error 	
 }
 
 error()
@@ -79,4 +77,3 @@ case "$1" in
 		usage
 		;;
 esac
-

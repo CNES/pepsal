@@ -69,7 +69,7 @@ PEPsal binary can be run with the following optional parameters:
 - *-V* (version): print version, and exit.
 - *-a* (ip_address): address to bind the listening port (by default, *0.0.0.0*, all the interfaces).
 - *-l* (log_file): file to log the active connections periodically.
-- *-g* (gcc_interval): connections garbage collector that removes no longer entries from hash tables. (by default, 15 hours)
+- *-g* (gc_interval): connections garbage collector that removes no longer entries from hash tables. (by default, 15 hours)
 - *-t* (pending_lifetime): maximum lifetime for a pending connection. Past this time, it will be considered garbage. (by default, 5 hours)
 - *-c* (max_conns): maximum number of connections allowed (by default, 2112).
 

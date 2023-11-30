@@ -70,7 +70,7 @@ struct ipv4_packet{
 static int DEBUG = 0;
 static int background = 0;
 static int fastopen = 0;
-static int gcc_interval = PEP_GCC_INTERVAL;
+static int gc_interval = PEP_GC_INTERVAL;
 static int pending_conn_lifetime = PEP_PENDING_CONN_LIFETIME;
 static int portnum = PEP_DEFAULT_PORT;
 static int max_conns = (PEP_MIN_CONNS + PEP_MAX_CONNS) / 2;
@@ -364,7 +364,7 @@ out:
 
 /*
  * Garbage connections collector handler is periodically invoked
- * with gcc_interval interval(in seconds) and cleans dead(or garbage)
+ * with gc_interval interval(in seconds) and cleans dead(or garbage)
  * connections.
  * When PEPsal catches SYN packet from the source endpoint,
  * it creates new pep_proxy instance, markes it with PST_PENDING status
@@ -1018,7 +1018,7 @@ static void *timer_sch_loop(void __attribute__((unused)) *unused)
             gettimeofday(&last_log_evt_time, 0);
         }
 
-        if (now.tv_sec > last_gc_evt_time.tv_sec + gcc_interval) {
+        if (now.tv_sec > last_gc_evt_time.tv_sec + gc_interval) {
             garbage_connections_collector();
             gettimeofday(&last_gc_evt_time, 0);
         }
@@ -1131,7 +1131,7 @@ int main(int argc, char *argv[])
                 pending_conn_lifetime = atoi(optarg);
                 break;
             case 'g':
-                gcc_interval = atoi(optarg);
+                gc_interval = atoi(optarg);
                 break;
             case 'c':
                 max_conns = atoi(optarg);
