@@ -16,4 +16,4 @@ override_dh_install:
 	install -D -m 0644 conf/logrotate.conf $(CURDIR)/debian/pepsal/etc/logrotate.d/pepsal.conf
 
 %:
-	dh $@ --with=systemd
+	dh $@
