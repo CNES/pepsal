@@ -22,38 +22,34 @@ AC_PROG_MAKE_SET
 AC_PROG_RANLIB
 
 # Checks for libraries
-AC_CHECK_LIB([nfnetlink], [nfnl_open],,check_nfnetlink="no")
+# if test x${check_nfqueue} = xno; then 
+#    AC_MSG_RESULT([ERROR: libnetfilter-queue required])
+#    exit 1
+# fi
+# AC_CHECK_LIB([nfnetlink], [nfnl_open],,check_nfnetlink="no")
+# if test x${check_nfnetlink} = xno; then
+#    AC_MSG_RESULT([ERROR: libnfnetlink required])
+#    exit 1
+# fi
 AC_CHECK_LIB([pthread], [pthread_create],,check_pthread="no")
+if test x${check_pthread} = xno; then
+   AC_MSG_RESULT([ERROR: libpthread required])
+   exit 1
+fi
 AC_CHECK_LIB([rt], [timer_create],,check_rt="no")
+if test x${check_rt} = xno; then
+   AC_MSG_RESULT([ERROR: librt required])
+   exit 1
+fi
 AC_CHECK_LIB([m], [ceil],,check_m="no")
-
-if test \
-   -o x${check_nfnetlink} = xno \
-   -o x${check_pthread} = xno \
-   -o x${check_rt} = xno \
-   -o x${check_m} = xno \
-   ; then
-   AC_MSG_RESULT([])
-   if test x${check_nfqueue} = xno; then 
-      AC_MSG_RESULT([ERROR: libnetfilter-queue required])
-   fi
-   if test x${check_nfnetlink} = xno; then
-      AC_MSG_RESULT([ERROR: libnfnetlink required])
-   fi
-   if test x${check_pthread} = xno; then
-      AC_MSG_RESULT([ERROR: libpthread required])
-   fi
-   if test x${check_rt} = xno; then
-      AC_MSG_RESULT([ERROR: librt required])
-   fi
-   if test x${check_m} = xno; then
-      AC_MSG_RESULT([ERROR: libm required])
-   fi
+if test x${check_m} = xno; then
+   AC_MSG_RESULT([ERROR: libm required])
    exit 1
 fi
 
 # Add required libraries to LDFLAGS
-[ LDFLAGS="$LDFLAGS -lnfnetlink -lpthread -lrt -lm" ]
+# [ LDFLAGS="$LDFLAGS -lnfnetlink -lpthread -lrt -lm" ]
+[ LDFLAGS="$LDFLAGS -lpthread -lrt -lm" ]
 
 # Checks for header files.
 AC_HEADER_DIRENT
