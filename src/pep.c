@@ -51,6 +51,7 @@
 #include <syslog.h>
 
 #include <sys/time.h>
+#include <math.h>
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE (1 << 12)
@@ -77,12 +78,14 @@ static int ip_len = 40;
 static char pepsal_ip_addr[40] = "::0";
 static int snat = 0;
 static char snat_addr[40] = "::0";
+static int opened_conns =0;
+static unsigned int monitoring_pid = 0;
 
 
 /*
 * struct for tcp options
 */
-static struct pep_sockopt sockopt;
+struct pep_sockopt sockopt;
 /*
  * file descriptor for epoll
  */
@@ -395,6 +398,10 @@ static void destroy_proxy(struct pep_proxy *proxy)
         }
         close(proxy->endpoints[i].buf.in);
         close(proxy->endpoints[i].buf.out);
+    }
+    opened_conns--;
+    if (opened_conns == round(0.95 * max_conns)){
+        kill(monitoring_pid, SIGUSR2);
     }
 
 out:
@@ -726,6 +733,10 @@ void *listener_loop(void UNUSED(*unused))
         out_fd = -1;
         proxy = NULL;
         len = sizeof(struct sockaddr_in6);
+        if (opened_conns == round(0.99  * max_conns)){
+            kill(monitoring_pid,SIGUSR1);
+            pep_warning("Alert! maximum number of connections almost reached: [Opened connecion: %d] ", opened_conns );
+        }
         connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &len);
         if (connfd < 0) {
             pep_warning("accept() failed! [Errno: %s, %d]",
@@ -906,6 +917,8 @@ void *listener_loop(void UNUSED(*unused))
             pep_warning("Failed to connect! [%s:%d]", strerror(errno), errno);
             goto close_connection;
         }
+        opened_conns++;
+        PEP_DEBUG("Opened %d connections",opened_conns);
 
         proxy->src.fd = connfd;
         ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connfd, &proxy->src.epoll_event);
@@ -1263,10 +1276,11 @@ int main(int argc, char *argv[])
             {"corck",0, 0, 'k'},
             {"congestion_algo",0, 0, 'C'},
             {"max_segment_size",0, 0, 'm'},
+            {"monitoring_pid", 0, 0, 'M'},
             {0, },
         };
 
-        c = getopt_long(argc, argv, "dvVhfqnkp:a:l:g:t:c:s:T:C:m:",
+        c = getopt_long(argc, argv, "dvVhfqnkp:a:l:g:t:c:s:T:C:m:M:",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -1340,6 +1354,9 @@ int main(int argc, char *argv[])
             case 'm':
                 sockopt.maxseg_size = atoi(optarg);
                 break;
+            case 'M': 
+                monitoring_pid = atoi(optarg);
+                break;
             case 'V':
                 printf("PEPSal ver. %s\n", VERSION);
                 exit(0);
@@ -1348,7 +1365,7 @@ int main(int argc, char *argv[])
     openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON);
 
     /*setting new ressources limit*/
-    new_lim.rlim_cur = (4 * max_conns);
+    new_lim.rlim_cur = (10 * max_conns);
     new_lim.rlim_max = 1048576;
     if (setrlimit(RLIMIT_NOFILE,&new_lim) ==  -1){
         pep_error("Failed to set new ressources limits");

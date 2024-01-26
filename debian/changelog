@@ -6,6 +6,7 @@ pepsal (2.0.0) focal; urgency=low
   * Adjustable number of worker threads
   * More socket options for intercepted connections
   * Fixed issues with file descriptor when using large values of --conns
+  * Added ability to signal when PEPSal is reaching its connections limit
   * Improved dependencies detection during compilation
 
  -- PEPSal Maintainers <admin@pepsal.org>  Mon, 29 Jan 2024 11:41:27 +0200

@@ -1,6 +1,7 @@
 # C extentions
 *.so
 *.o
+*~
 
 # Autotools
 Makefile
@@ -23,9 +24,7 @@ config.h.in
 
 .vscode
 src/pepsal
-debian/pepsal
-debian/files
-debian/tmp
+debian/
 *.substvars
 *.debhelper*
 *.libs

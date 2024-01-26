@@ -88,7 +88,14 @@ struct pep_sockopt {
 };
 #define GET_SOCKOPT() (&sockopt)
 
-#define SOCKOPT_INIT_LOCK()    pthread_mutex_init(&(GET_SOCKOPT())->mutex, NULL)
+#define SOCKOPT_INIT_LOCK()                                     \
+do {                                                            \
+    pthread_mutexattr_t attr;                                   \
+    pthread_mutexattr_init(&attr);                              \
+    pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);                         \
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);\
+    pthread_mutex_init(&GET_SOCKOPT()->mutex, &attr);           \
+}while(0)
 #define SOCKOPT_LOCK()         pthread_mutex_lock(&(GET_SOCKOPT())->mutex)
 #define SOCKOPT_UNLOCK()       pthread_mutex_unlock(&(GET_SOCKOPT())->mutex)
 #define SOCKOPT_DESTROY_LOCK() pthread_mutex_destroy(&(GET_SOCKOPT())->mutex)
