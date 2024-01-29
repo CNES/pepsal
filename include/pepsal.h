@@ -76,4 +76,23 @@ struct pep_proxy {
     int enqueued;
 };
 
+struct pep_sockopt {
+    int     fastopen;
+    int     quickack;
+    int     nodelay;
+    int     corck;
+    int     maxseg_size;
+    pthread_mutex_t mutex;
+    char    congestion_algo[10];
+
+};
+#define GET_SOCKOPT() (&sockopt)
+
+#define SOCKOPT_INIT_LOCK()    pthread_mutex_init(&(GET_SOCKOPT())->mutex, NULL)
+#define SOCKOPT_LOCK()         pthread_mutex_lock(&(GET_SOCKOPT())->mutex)
+#define SOCKOPT_UNLOCK()       pthread_mutex_unlock(&(GET_SOCKOPT())->mutex)
+#define SOCKOPT_DESTROY_LOCK() pthread_mutex_destroy(&(GET_SOCKOPT())->mutex)
+
+extern struct pep_sockopt sockopt;
+
 #endif /* !__PEPSAL_H */

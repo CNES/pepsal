@@ -69,7 +69,6 @@
 
 static int DEBUG = 0;
 static int background = 0;
-static int fastopen = 0;
 static int gc_interval = PEP_GC_INTERVAL;
 static int pending_conn_lifetime = PEP_PENDING_CONN_LIFETIME;
 static int portnum = PEP_DEFAULT_PORT;
@@ -79,6 +78,11 @@ static char pepsal_ip_addr[40] = "::0";
 static int snat = 0;
 static char snat_addr[40] = "::0";
 
+
+/*
+* struct for tcp options
+*/
+static struct pep_sockopt sockopt;
 /*
  * file descriptor for epoll
  */
@@ -206,11 +210,13 @@ static void __pep_warning(const char *function, int line, const char *fmt, ...)
 
 static void usage(char *name)
 {
-    fprintf(stderr,"Usage: %s [-V] [-h] [-v] [-d] [-f]"
+    fprintf(stderr,"Usage: %s [-V] [-h] [-v] [-d] [-f] [q] [n] [k]"
             " [-a address] [-p port]"
             " [-c max_conn] [-l logfile] [-t proxy_lifetime]"
             " [-g garbage collector interval]"
-            " [-s source NAT address] [-T worker threads count]\n", name);
+            " [-s source NAT address] [-T worker threads count]"
+            " [-C congestion control algorithm]"
+            " [-m TCP max segment size]\n", name);
     exit(EXIT_SUCCESS);
 }
 
@@ -604,7 +610,53 @@ err:
 
     return ret;
 }
+void* edit_sockopts(struct pep_sockopt* socketopts){
+    int ret,optval;
+    SOCKOPT_LOCK();
+    if (socketopts->fastopen){
+        sockopt.fastopen = socketopts->fastopen;
+    }
+    if (socketopts->corck){
+        sockopt.corck = socketopts->corck;
+    }
+    if (socketopts->nodelay){
+        sockopt.nodelay = socketopts->nodelay;
+    }
+    if (socketopts->maxseg_size){
+        sockopt.maxseg_size = socketopts->maxseg_size;
+    }
+    if (socketopts->congestion_algo != NULL && socketopts->congestion_algo[0] != '\0'){
+        strcpy(sockopt.congestion_algo,socketopts->congestion_algo);
+    }
 
+    SOCKOPT_UNLOCK();
+}
+static void get_available_cc(char* cc_algorithm[20]) {
+    FILE* file = fopen("/proc/sys/net/ipv4/tcp_available_congestion_control", "r");
+    if (file == NULL) {
+        pep_error("Failed to open /proc/sys/net/ipv4/tcp_available_congestion_control");
+  
+    }
+
+    char buffer[256];
+    int i = 0;  
+
+    if (fgets(buffer, 256, file) != NULL) {
+        buffer[strcspn(buffer, "\n")] = 0;
+    } else {
+        pep_error("Failed to read /proc/sys/net/ipv4/tcp_available_congestion_control");
+    }
+    const char * separators = " ";
+    char * algo = strtok(buffer,separators);
+    while (algo != NULL)
+    {
+        cc_algorithm[i] = algo;
+        i++;
+        algo = strtok ( NULL,separators);
+    }
+    
+    fclose(file);
+}
 
 void *listener_loop(void UNUSED(*unused))
 {
@@ -619,6 +671,7 @@ void *listener_loop(void UNUSED(*unused))
     struct addrinfo      hints, *host_res;
     unsigned short       r_port, c_port;
     struct syntab_key    key;
+    struct pep_sockopt   socket_opts;
 
     listenfd = socket(AF_INET6, SOCK_STREAM, 0);
     if (listenfd < 0) {
@@ -645,7 +698,8 @@ void *listener_loop(void UNUSED(*unused))
     }
 
     /* Set TCP_FASTOPEN socket option */
-    if (fastopen) {
+    SOCKOPT_LOCK();
+    if (sockopt.fastopen) {
       optval = 5;
       ret = setsockopt(listenfd, SOL_TCP, TCP_FASTOPEN,
                        &optval, sizeof(optval));
@@ -653,6 +707,7 @@ void *listener_loop(void UNUSED(*unused))
           pep_error("Failed to set TCP_FASTOPEN option! [RET = %d]", ret);
       }
     }
+    SOCKOPT_UNLOCK();
 
     ret = bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr));
     if (ret < 0) {
@@ -683,6 +738,9 @@ void *listener_loop(void UNUSED(*unused))
                         strerror(errno), errno);
             goto close_connection;
         }
+        SOCKOPT_LOCK();
+        memcpy(&socket_opts, &sockopt, sizeof(socket_opts));
+        SOCKOPT_UNLOCK();
         /*
          * Try to find incomming connection in our SYN table
          * It must be already there waiting for activation.
@@ -795,8 +853,42 @@ void *listener_loop(void UNUSED(*unused))
         else
             strncpy(ipbuf, snat_addr, sizeof(ipbuf)-1);
 
-
-        if (fastopen) {
+        if (socket_opts.quickack) {
+            optval = 1;
+            ret = setsockopt(out_fd, IPPROTO_TCP,TCP_QUICKACK,&optval, sizeof(optval));
+            if (ret < 0) {
+                pep_error("Failed to set TCP QUICACK option! [RET = %d]", ret);
+            }
+        }
+        if (socket_opts.nodelay) {
+            optval = 1;
+            ret = setsockopt(out_fd, IPPROTO_TCP, TCP_NODELAY,&optval, sizeof(optval));
+            if (ret < 0) {
+                pep_error("Failed to set TCP NODELAY option! [RET = %d]", ret);
+            }
+        }
+        if (socket_opts.corck) {
+            optval = 1;
+            ret = setsockopt(out_fd, IPPROTO_TCP, TCP_CORK,&optval,sizeof(optval));
+            if (ret < 0){
+                pep_error("Failed to set TCP CORCK option! [RET = %d]",ret);
+            }
+        }
+        if (socket_opts.maxseg_size){
+            optval = sockopt.maxseg_size;
+            ret = setsockopt(out_fd, IPPROTO_TCP, TCP_MAXSEG, &optval,sizeof(optval));
+            if (ret < 0) {
+                pep_error("Failed to set TCP MSS option! [RET = %d]", ret);
+            }
+        }
+        if (socket_opts.congestion_algo != NULL && sockopt.congestion_algo[0] != '\0'){
+            socklen_t len = strlen(sockopt.congestion_algo);
+            ret = setsockopt(out_fd, IPPROTO_TCP, TCP_CONGESTION, &sockopt.congestion_algo,len);
+            if (ret < 0) {
+                pep_error("Failed to set TCP Congestion Control algorithm! [RET = %d]", ret);
+            }
+        }
+        if (socket_opts.fastopen) {
             ret = splice(proxy->src.buf.out, NULL, out_fd, NULL, PAGE_SIZE,
                          SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
         }
@@ -1145,8 +1237,11 @@ int main(int argc, char *argv[])
     struct rlimit lim,new_lim;
     void *valptr;
     sigset_t sigset;
-
+    char* cc_algorithm[20];
+    SOCKOPT_INIT_LOCK();
+    memset(&sockopt, 0, sizeof(sockopt));
     memset(&logger, 0, sizeof(logger));
+    get_available_cc(cc_algorithm);
     while (1) {
         int option_index = 0;
         static struct option long_options[] = {
@@ -1163,10 +1258,15 @@ int main(int argc, char *argv[])
             {"conns", 1, 0, 'c'},
             {"snat", 1, 0, 's'},
             {"threads", 1, 0, 'T'},
+            {"quickack",0, 0, 'q'},
+            {"nodelay",0, 0, 'n'},
+            {"corck",0, 0, 'k'},
+            {"congestion_algo",0, 0, 'C'},
+            {"max_segment_size",0, 0, 'm'},
             {0, },
         };
 
-        c = getopt_long(argc, argv, "dvVhfp:a:l:g:t:c:s:T:",
+        c = getopt_long(argc, argv, "dvVhfqnkp:a:l:g:t:c:s:T:C:m:",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -1182,7 +1282,7 @@ int main(int argc, char *argv[])
                 usage(argv[0]); //implies exit
                 break;
             case 'f':
-                fastopen = 1;
+                sockopt.fastopen = 1;
                 break;
             case 'p':
                 portnum = atoi(optarg);
@@ -1213,6 +1313,32 @@ int main(int argc, char *argv[])
                 break;
             case 'T':
                 peppool_threads = atoi(optarg);
+                break;
+            case 'q':
+                sockopt.quickack = 1;
+                break;
+            case 'n':
+                sockopt.nodelay = 1;
+                break;
+            case 'k':
+                sockopt.corck = 1;
+                break;
+            case 'C':  
+                strncpy(sockopt.congestion_algo, optarg, 10);
+                int is_algorithm_found;
+                for (size_t i =0;i<20;i++){
+                    if (strcmp(sockopt.congestion_algo,cc_algorithm[i]) == 0){
+                        is_algorithm_found = 1;
+                        break;
+                    }
+                }
+                if(!is_algorithm_found){
+                fprintf(stderr,"Requested congestion control algorithm is not available on the system \n");
+                usage(argv[0]);
+                }
+                break;
+            case 'm':
+                sockopt.maxseg_size = atoi(optarg);
                 break;
             case 'V':
                 printf("PEPSal ver. %s\n", VERSION);
@@ -1258,6 +1384,7 @@ int main(int argc, char *argv[])
     pthread_join(poller, &valptr);
     pthread_join(timer_sch, &valptr);
     PEP_DEBUG("exiting...\n");
+    SOCKOPT_DESTROY_LOCK();
     close(epoll_fd);
     closelog();
     return 0;
