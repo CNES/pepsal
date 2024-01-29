@@ -531,14 +531,13 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
         pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 }
-static int save_proxy_from_socket(int sockfd, struct sockaddr_in6 cliaddr)
+
+static int save_proxy_from_socket(struct sockaddr_in6 orig_dst, struct sockaddr_in6 cliaddr)
 {
     char *buffer;
     struct pep_proxy *proxy, *dup;
     struct syntab_key key;
     int id = 0, ret, added = 0;
-    struct sockaddr_in6 orig_dst;
-    int addrlen = sizeof(orig_dst);
 
     PEP_DEBUG("Saving new SYN...");
 
@@ -546,14 +545,6 @@ static int save_proxy_from_socket(int sockfd, struct sockaddr_in6 cliaddr)
     proxy = alloc_proxy();
     if (!proxy) {
         pep_warning("Failed to allocate new pep_proxy instance! [%s:%d]",
-                    strerror(errno), errno);
-        ret = -1;
-        goto err;
-    }
-
-    /* Socket is bound to original destination */
-    if(getsockname(sockfd, (struct sockaddr *) &orig_dst, &addrlen) < 0){
-        pep_warning("Failed to get original dest from socket! [%s:%d]",
                     strerror(errno), errno);
         ret = -1;
         goto err;
@@ -619,7 +610,8 @@ void *listener_loop(void UNUSED(*unused))
 {
     int                  listenfd, optval, ret, connfd, out_fd,error;
     struct sockaddr_in   r_servaddr;
-    struct sockaddr_in6  cliaddr, servaddr,r_servaddr6;
+    struct sockaddr_in6  cliaddr, orig_dst, servaddr, r_servaddr6;
+    int addrlen        = sizeof(orig_dst);
     char                 ipbuf[40],port_str [6];
     socklen_t            len;
     struct pep_proxy     *proxy;
@@ -685,6 +677,12 @@ void *listener_loop(void UNUSED(*unused))
                         strerror(errno), errno);
             continue;
         }
+        /* Socket is bound to original destination */
+        if(getsockname(connfd, (struct sockaddr *) &orig_dst, &addrlen) < 0){
+            pep_warning("Failed to get original dest from socket! [%s:%d]",
+                        strerror(errno), errno);
+            goto close_connection;
+        }
         /*
          * Try to find incomming connection in our SYN table
          * It must be already there waiting for activation.
@@ -693,8 +691,14 @@ void *listener_loop(void UNUSED(*unused))
             key.addr[i] = ntohs(cliaddr.sin6_addr.s6_addr16[i]);    
         }
         key.port = ntohs(cliaddr.sin6_port);
+        #ifdef ENABLE_DST_IN_KEY
+        key.dst_port = ntohs(orig_dst.sin6_port);
+        for(int i=0 ; i<8; ++i){
+            key.dst_addr[i] = ntohs(orig_dst.sin6_addr.s6_addr16[i]);    
+        }
+        #endif
         toip6(ipbuf, key.addr);
-        PEP_DEBUG("New incomming connection from: %s:%d", ipbuf, key.port);
+        PEP_DEBUG("New incomming connection from: %s:%d ", ipbuf, key.port);
 
         SYNTAB_LOCK_READ();
         proxy = syntab_find(&key);
@@ -704,7 +708,7 @@ void *listener_loop(void UNUSED(*unused))
          */
         if (!proxy) {
             SYNTAB_UNLOCK_READ();
-            save_proxy_from_socket(connfd, cliaddr);
+            save_proxy_from_socket(orig_dst, cliaddr);
             SYNTAB_LOCK_READ();
             proxy = syntab_find(&key);
         }
@@ -778,6 +782,12 @@ void *listener_loop(void UNUSED(*unused))
                          &optval, sizeof(optval));
         if (ret < 0) {
             pep_error("Failed to set IP_TRANSPARENT option! [RET = %d]", ret);
+        }
+        optval = 64 * 1024;
+
+        ret=setsockopt(out_fd, SOL_SOCKET, SO_RCVBUF, &optval, sizeof(optval));
+        if (ret == -1) {
+            pep_error("Failed to set receiv buffer size option! [RET = %d]", ret);
         }
 
         if (!snat)

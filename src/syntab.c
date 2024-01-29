@@ -8,12 +8,12 @@
  *
  *
  */
-
+#include "config.h"
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <assert.h>
-
+#include <stdio.h>
 #include "pepsal.h"
 #include "syntab.h"
 
@@ -92,14 +92,23 @@ int syntab_init(int num_conns)
 
     return 0;
 }
+
 static __inline void syntab_make_key(struct syntab_key *key,
-                                     uint16_t addr[8], unsigned short port)
+                                     uint16_t addr[8], unsigned short port,
+                                     unsigned short dst_port, uint16_t dst_addr[8])
 {
     memset(key, 0, sizeof(*key));
     for(size_t i; i<8;i++){
         (key->addr)[i] = addr[i];
     }
     key->port = port;
+    #ifdef ENABLE_DST_IN_KEY
+    key->dst_port = dst_port;
+
+    for(size_t i; i<8;i++){
+        (key->dst_addr)[i] = dst_addr[i];
+    }
+    #endif
 }
 
 void syntab_format_key(struct pep_proxy *proxy, struct syntab_key *key)
@@ -108,6 +117,12 @@ void syntab_format_key(struct pep_proxy *proxy, struct syntab_key *key)
         (key->addr)[i] = proxy->src.addr[i];
     }
     key->port = proxy->src.port;
+    #ifdef ENABLE_DST_IN_KEY
+    key->dst_port = proxy->dst.port;
+    for(size_t i; i<8;i++){
+        (key->dst_addr)[i] = proxy->dst.addr[i];
+    }
+    #endif
 }
 
 struct pep_proxy *syntab_find(struct syntab_key *key)
@@ -127,7 +142,7 @@ int syntab_add(struct pep_proxy *proxy)
         return -1;
     }
 
-    syntab_make_key(key, proxy->src.addr, proxy->src.port);
+    syntab_make_key(key, proxy->src.addr, proxy->src.port, proxy->dst.port,proxy->dst.addr);
     ret = hashtable_insert(syntab.hash, key, proxy);
     if (ret == 0) {
         free(key);
@@ -144,7 +159,7 @@ void syntab_delete(struct pep_proxy *proxy)
 {
     struct syntab_key key;
 
-    syntab_make_key(&key, proxy->src.addr, proxy->src.port);
+    syntab_make_key(&key, proxy->src.addr, proxy->src.port, proxy->dst.port,proxy->dst.addr);
     hashtable_remove(syntab.hash, &key);
     list_del(&proxy->lnode);
     syntab.num_items--;

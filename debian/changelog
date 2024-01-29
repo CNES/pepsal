@@ -4,6 +4,7 @@ pepsal (2.0.0) focal; urgency=low
   * Zero-copy of packets going through PEPSal (splicing them to their
     destination using a pipe)
   * Adjustable number of worker threads
+  * Fixed issues with file descriptor when using large values of --conns
   * Improved dependencies detection during compilation
 
  -- PEPSal Maintainers <admin@pepsal.org>  Thu, 11 Apr 2019 15:52:38 +0200

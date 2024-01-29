@@ -12,7 +12,7 @@
 
 #ifndef __PEPSAL_SYNTAB_H
 #define __PEPSAL_SYNTAB_H
-
+#include "config.h"
 #include <pthread.h>
 #include "hashtable.h"
 #include "list.h"
@@ -33,6 +33,14 @@ struct syntab_key {
     };
     
     unsigned short port;
+    #ifdef ENABLE_DST_IN_KEY
+    unsigned short dst_port;
+    union 
+    {
+        uint16_t dst_addr[8];
+        uint8_t dst_addr8[16];
+    };
+    #endif
 } __attribute__((packed));
 
 #define GET_SYNTAB() (&syntab)
