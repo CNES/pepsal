@@ -21,6 +21,7 @@ ltmain.sh
 config.h
 config.h.in
 
+.vscode
 src/pepsal
 debian/pepsal
 debian/files

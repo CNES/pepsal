@@ -19,7 +19,7 @@
 
 struct syn_table syntab;
 
-/* Bob Jenkin's MIX function */
+/* Bob Jenkin's MIX64 function */
 #define BJ_MIX(a, b, c)                            \
     do {                                           \
         a -= b; a -= c; a ^= (c>>13);              \
@@ -38,23 +38,28 @@ struct syn_table syntab;
 static unsigned int syntab_hashfunction(void *k)
 {
     struct syntab_key *sk = k;
-    unsigned int a, b, key;
+    unsigned int a, b, c;
+    uint8_t key[16];
 
-    key = sk->addr;
-    a = sk->port;
-    b = 0x9e3779b9; /* the golden ratio */
+    for (int i = 0; i < 16; ++i) {
+        key[i] = sk->addr8[i];
+    }
+    c = sk->port;
+    a = b = 0x9e3779b9; /* the golden ratio */
 
-    BJ_MIX(a, b, key);
+   /* Robert Jenkins' 32 bit integer hash function */
+    a=a+(key[0]+(key[1]<<8)+(key[2]<<16) +(key[3]<<24));
+    b=b+(key[4]+(key[5]<<8)+(key[6]<<16) +(key[7]<<24));
+    c=c+(key[8]+(key[9]<<8)+(key[10]<<16)+(key[11]<<24));
+    BJ_MIX(a, b, c);
+    c += 16;
+    a=a+(key[15]<<24);
+    a=a+(key[14]<<16);
+    a=a+(key[13]<<8);
+    a=a+key[12];
+    BJ_MIX(a, b, c);
 
-    /* Robert Jenkins' 32 bit integer hash function */
-    key = (key + 0x7ed55d16) + (key << 12);
-    key = (key ^ 0xc761c23c) ^ (key >> 19);
-    key = (key + 0x165667b1) + (key << 5);
-    key = (key + 0xd3a2646c) ^ (key << 9);
-    key = (key + 0xfd7046c5) + (key << 3);
-    key = (key ^ 0xb55a4f09) ^ (key >> 16);
-
-    return key;
+    return c;
 }
 
 static int __keyeqfn(void *k1, void *k2)
@@ -87,18 +92,21 @@ int syntab_init(int num_conns)
 
     return 0;
 }
-
 static __inline void syntab_make_key(struct syntab_key *key,
-                                     int addr, unsigned short port)
+                                     uint16_t addr[8], unsigned short port)
 {
     memset(key, 0, sizeof(*key));
-    key->addr = addr;
+    for(size_t i; i<8;i++){
+        (key->addr)[i] = addr[i];
+    }
     key->port = port;
 }
 
 void syntab_format_key(struct pep_proxy *proxy, struct syntab_key *key)
 {
-    key->addr = proxy->src.addr;
+    for(size_t i; i<8;i++){
+        (key->addr)[i] = proxy->src.addr[i];
+    }
     key->port = proxy->src.port;
 }
 

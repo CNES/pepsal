@@ -24,7 +24,7 @@ static const unsigned int primes[] = {
 };
 const unsigned int prime_table_length = sizeof(primes)/sizeof(primes[0]);
 const float max_load_factor = 0.65;
-
+static int DEBUG = 0;
 /*****************************************************************************/
 struct hashtable *
 create_hashtable(unsigned int minsize,

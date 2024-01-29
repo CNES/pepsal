@@ -25,8 +25,13 @@ struct syn_table{
     int                num_items;
 };
 
-struct syntab_key {
-    int addr;
+struct syntab_key {   
+    union 
+    {
+        uint16_t addr[8];
+        uint8_t addr8[16];
+    };
+    
     unsigned short port;
 } __attribute__((packed));
 

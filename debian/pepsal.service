@@ -6,7 +6,7 @@ After=systemd-journald-dev-log.socket
 [Service]
 Type=forking
 Environment="port=5000"
-Environment="ip_address=0.0.0.0"
+Environment="ip_address=::"
 Environment="max_conns=2112"
 Environment="gc_interval=54000"
 Environment="pending_lifetime=18000"

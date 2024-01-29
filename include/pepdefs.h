@@ -41,7 +41,7 @@
 
 #define PEP_GC_INTERVAL (15 * 3600)
 
-#define PEP_PENDING_CONN_LIFETIME (5 * 3600)
+#define PEP_PENDING_CONN_LIFETIME (5 * 60)
 
 #ifndef offsetof
 #define offsetof(type, field)                               \

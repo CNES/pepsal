@@ -31,17 +31,20 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <netinet/ether.h>
 #include <netdb.h>
 #include <getopt.h>
 #include <linux/netfilter.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <net/if.h>
 
 #include <sys/epoll.h>
+#include <sys/resource.h>
 #include <string.h>
 #include <time.h>
 #include <signal.h>
@@ -62,10 +65,7 @@
  *      tcph: tcp header for the segment
  *
  */
-struct ipv4_packet{
-    struct iphdr iph;
-    struct tcphdr tcph;
-};
+
 
 static int DEBUG = 0;
 static int background = 0;
@@ -74,9 +74,10 @@ static int gc_interval = PEP_GC_INTERVAL;
 static int pending_conn_lifetime = PEP_PENDING_CONN_LIFETIME;
 static int portnum = PEP_DEFAULT_PORT;
 static int max_conns = (PEP_MIN_CONNS + PEP_MAX_CONNS) / 2;
-static char pepsal_ip_addr[20] = "0.0.0.0";
+static int ip_len = 40;
+static char pepsal_ip_addr[40] = "::0";
 static int snat = 0;
-static char snat_addr[20] = "0.0.0.0";
+static char snat_addr[40] = "::0";
 
 /*
  * file descriptor for epoll
@@ -111,6 +112,29 @@ static pthread_t poller;
 static pthread_t timer_sch;
 static pthread_t *workers = NULL;
 
+#ifdef DISABLE_SYSLOG
+
+#define pep_error(fmt, args...)                       \
+    __pep_error(__FUNCTION__, __LINE__, fmt, ##args)  
+
+#define pep_warning(fmt, args...)                     \
+    __pep_warning(__FUNCTION__, __LINE__, fmt, ##args)
+
+#define PEP_DEBUG(fmt, args...)                       \
+    if (DEBUG) {                                      \
+        fprintf(stderr, "[DEBUG] %s(): " fmt "\n",    \
+                __FUNCTION__, ##args);                \
+    }
+
+#define PEP_DEBUG_DP(proxy, fmt, args...)                           \
+    if (DEBUG) {                                                    \
+        char __buf[40];                                             \
+        toip6(__buf, (proxy)->src.addr);                            \
+        fprintf(stderr, "[DEBUG] %s(): {%s:%d} " fmt "\n",          \
+                __FUNCTION__, __buf, (proxy)->src.port, ##args);    \
+    }
+#else
+
 #define pep_error(fmt, args...)                       \
     syslog(LOG_ERR, "%s():%d: " fmt " (errno %d)",    \
            __FUNCTION__, __LINE__, ##args, errno);    \
@@ -131,13 +155,14 @@ static pthread_t *workers = NULL;
 
 #define PEP_DEBUG_DP(proxy, fmt, args...)                           \
     if (DEBUG) {                                                    \
-        char __buf[17];                                             \
-        toip(__buf, (proxy)->src.addr);                             \
+        char __buf[40];                                             \
+        toip6(__buf, (proxy)->src.addr);                            \
         fprintf(stderr, "[DEBUG] %s(): {%s:%d} " fmt "\n",          \
                 __FUNCTION__, __buf, (proxy)->src.port, ##args);    \
         syslog(LOG_DEBUG, "%s(): {%s:%d} " fmt, __FUNCTION__,       \
                __buf, (proxy)->src.port, ##args);                   \
     }
+#endif
 
 #define TABLE_SIZE(_a) ((sizeof((_a)[0]))?sizeof(_a)/sizeof((_a)[0]):0)
 
@@ -215,6 +240,7 @@ static int nonblocking_err_p(int err)
  * Secure routine to translate a hex address in a
  * readable ip number:
  */
+
 static void toip(char *ret, int address)
 {
     int a,b,c,d;
@@ -225,6 +251,13 @@ static void toip(char *ret, int address)
     d = 0x000000FF & address;
 
     snprintf(ret,16,"%d.%d.%d.%d",a,b,c,d);
+}
+
+static void toip6(char *ret, uint16_t addr[8])
+{
+
+    snprintf(ret, 40, "%x:%x:%x:%x:%x:%x:%x:%x", 
+                addr[0],addr[1],addr[2],addr[3],addr[4],addr[5],addr[6],addr[7]);
 }
 
 static char *conn_stat[] = {
@@ -238,7 +271,7 @@ static void logger_fn(void)
 {
     struct pep_proxy *proxy;
     time_t tm;
-    char ip_src[17], ip_dst[17], timebuf[128];
+    char ip_src[ip_len], ip_dst[ip_len], timebuf[128];
     int i = 1, len;
 
     PEP_DEBUG("Logger invoked!");
@@ -249,8 +282,8 @@ static void logger_fn(void)
     timebuf[len - 1] = ']';
     fprintf(logger.file, "=== [%s ===\n", timebuf);
     syntab_foreach_connection(proxy) {
-        toip(ip_src, proxy->src.addr);
-        toip(ip_dst, proxy->dst.addr);
+        toip6(ip_src, proxy->src.addr);
+        toip6(ip_dst, proxy->dst.addr);
         fprintf(logger.file, "[%d] Proxy %s:%d <-> %s:%d\n", i++,
                 ip_src, proxy->src.port, ip_dst, proxy->dst.port);
         fprintf(logger.file, "    Status: %s\n", conn_stat[proxy->status]);
@@ -498,15 +531,13 @@ static void pep_proxy_data(struct pep_endpoint *from, struct pep_endpoint *to)
         pep_error("epoll_ctl: [%s:%d]", strerror(errno), errno);
     }
 }
-
-static int save_proxy_from_socket(int sockfd, struct sockaddr_in cliaddr)
+static int save_proxy_from_socket(int sockfd, struct sockaddr_in6 cliaddr)
 {
     char *buffer;
-    struct ipv4_packet *ip4;
     struct pep_proxy *proxy, *dup;
     struct syntab_key key;
     int id = 0, ret, added = 0;
-    struct sockaddr_in orig_dst;
+    struct sockaddr_in6 orig_dst;
     int addrlen = sizeof(orig_dst);
 
     PEP_DEBUG("Saving new SYN...");
@@ -529,10 +560,15 @@ static int save_proxy_from_socket(int sockfd, struct sockaddr_in cliaddr)
     }
 
     /* Setup source and destination endpoints */
-    proxy->src.addr = ntohl(cliaddr.sin_addr.s_addr);
-    proxy->src.port = ntohs(cliaddr.sin_port);
-    proxy->dst.addr = ntohl(orig_dst.sin_addr.s_addr);
-    proxy->dst.port = ntohs(orig_dst.sin_port);
+    for(int i=0 ; i<8; ++i){
+             proxy->src.addr[i] = ntohs(cliaddr.sin6_addr.s6_addr16[i]);
+        }
+    for(int i=0 ; i<8; ++i){
+             proxy->dst.addr[i] = ntohs(orig_dst.sin6_addr.s6_addr16[i]);
+
+        }
+    proxy->src.port = ntohs(cliaddr.sin6_port);
+    proxy->dst.port = ntohs(orig_dst.sin6_port);
     proxy->syn_time = time(NULL);
     syntab_format_key(proxy, &key);
 
@@ -581,28 +617,27 @@ err:
 
 void *listener_loop(void UNUSED(*unused))
 {
-    int                 listenfd, optval, ret, connfd, out_fd;
-    struct sockaddr_in  cliaddr, servaddr,
-                        r_servaddr;
-    socklen_t           len;
-    struct pep_proxy   *proxy;
-    struct hostent     *host;
-    char                ipbuf[17], ipbuf1[17];
-    unsigned short      r_port, c_port;
-    struct syntab_key   key;
+    int                  listenfd, optval, ret, connfd, out_fd,error;
+    struct sockaddr_in   r_servaddr;
+    struct sockaddr_in6  cliaddr, servaddr,r_servaddr6;
+    char                 ipbuf[40],port_str [6];
+    socklen_t            len;
+    struct pep_proxy     *proxy;
+    struct hostent       *host;
+    struct addrinfo      hints, *host_res;
+    unsigned short       r_port, c_port;
+    struct syntab_key    key;
 
-    listenfd = socket(AF_INET, SOCK_STREAM, 0);
+    listenfd = socket(AF_INET6, SOCK_STREAM, 0);
     if (listenfd < 0) {
         pep_error("Failed to create listener socket!");
     }
 
     PEP_DEBUG("Opened listener socket: %d", listenfd);
     memset(&servaddr, 0, sizeof(servaddr));
-
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(portnum);
-
+    servaddr.sin6_family = AF_INET6;
+    servaddr.sin6_addr = in6addr_any;
+    servaddr.sin6_port = htons(portnum);
     optval = 1;
     ret = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,
                      &optval, sizeof(optval));
@@ -643,23 +678,23 @@ void *listener_loop(void UNUSED(*unused))
     for (;;) {
         out_fd = -1;
         proxy = NULL;
-
-        len = sizeof(struct sockaddr_in);
+        len = sizeof(struct sockaddr_in6);
         connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &len);
         if (connfd < 0) {
             pep_warning("accept() failed! [Errno: %s, %d]",
                         strerror(errno), errno);
             continue;
         }
-
         /*
          * Try to find incomming connection in our SYN table
          * It must be already there waiting for activation.
          */
-        key.addr = ntohl(cliaddr.sin_addr.s_addr);
-        key.port = ntohs(cliaddr.sin_port);
-        toip(ipbuf, key.addr);
-        PEP_DEBUG("New incomming connection: %s:%d", ipbuf, key.port);
+        for(int i=0 ; i<8; ++i){
+            key.addr[i] = ntohs(cliaddr.sin6_addr.s6_addr16[i]);    
+        }
+        key.port = ntohs(cliaddr.sin6_port);
+        toip6(ipbuf, key.addr);
+        PEP_DEBUG("New incomming connection from: %s:%d", ipbuf, key.port);
 
         SYNTAB_LOCK_READ();
         proxy = syntab_find(&key);
@@ -673,7 +708,6 @@ void *listener_loop(void UNUSED(*unused))
             SYNTAB_LOCK_READ();
             proxy = syntab_find(&key);
         }
-
         /*
          * If still can't find key in the table, there is an error.
          */
@@ -697,30 +731,45 @@ void *listener_loop(void UNUSED(*unused))
         assert(proxy->status == PST_PENDING);
         SYNTAB_UNLOCK_READ();
 
-        toip(ipbuf, proxy->dst.addr);
         r_port = proxy->dst.port;
-        PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
-        host = gethostbyname(ipbuf);
-        if (!host) {
+        memset(&hints, 0,sizeof(hints));
+        hints.ai_family = AF_UNSPEC ;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;        
+        sprintf(port_str,"%d",r_port);   
+        toip6(ipbuf, proxy->dst.addr);
+        error = getaddrinfo(ipbuf,port_str,&hints,&host_res);
+        if (error) {
             pep_warning("Failed to get host %s!", ipbuf);
             goto close_connection;
         }
-
-        memset(&r_servaddr, 0, sizeof(r_servaddr));
-        r_servaddr.sin_family = AF_INET;
-        r_servaddr.sin_addr.s_addr = ((struct in_addr *)(host->h_addr))->s_addr;
-        r_servaddr.sin_port = htons(r_port);
-
-        ret = socket(AF_INET, SOCK_STREAM, 0);
+        /* Check if received connexion is IPV6 or IPV4-mapped connexion*/
+        int is_ipv4 = IN6_IS_ADDR_V4MAPPED(&cliaddr.sin6_addr);
+        if (is_ipv4){
+            memset(&r_servaddr, 0, sizeof(r_servaddr));
+            r_servaddr.sin_addr.s_addr = ((struct sockaddr_in6 *)(host_res->ai_addr))->sin6_addr.s6_addr32[3];
+            toip(ipbuf,ntohl(r_servaddr.sin_addr.s_addr));
+            PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
+            r_servaddr.sin_family = AF_INET;
+            r_servaddr.sin_port = htons(r_port);
+            ret = socket(AF_INET, SOCK_STREAM, 0);
+        }
+        else{ 
+            PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
+            memset(&r_servaddr6, 0, sizeof(r_servaddr6));       
+            r_servaddr6.sin6_family = AF_INET6;
+            r_servaddr6.sin6_addr = ((struct sockaddr_in6 *)(host_res->ai_addr))->sin6_addr;
+            r_servaddr6.sin6_port = htons(r_port);
+            ret = socket(AF_INET6, SOCK_STREAM, 0);
+        }
+        freeaddrinfo(host_res);
         if (ret < 0) {
             pep_warning("Failed to create socket! [%s:%d]",
                         strerror(errno), errno);
             goto close_connection;
         }
-
         out_fd = ret;
         fcntl(out_fd, F_SETFL, O_NONBLOCK);
-
         /*
          * Set outbound endpoint to transparent mode
          * (bind to external address)
@@ -732,19 +781,24 @@ void *listener_loop(void UNUSED(*unused))
         }
 
         if (!snat)
-            toip(ipbuf, proxy->src.addr);
+            toip6(ipbuf, proxy->src.addr);
         else
             strncpy(ipbuf, snat_addr, sizeof(ipbuf)-1);
 
-        toip(ipbuf1, proxy->dst.addr);
 
         if (fastopen) {
             ret = splice(proxy->src.buf.out, NULL, out_fd, NULL, PAGE_SIZE,
                          SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
         }
         else {
-          ret = connect(out_fd, (struct sockaddr *)&r_servaddr,
+            if(is_ipv4){
+                ret = connect(out_fd, (struct sockaddr *)&r_servaddr,
                         sizeof(r_servaddr));
+            }
+            else{
+                ret = connect(out_fd, (struct sockaddr *)&r_servaddr6,
+                        sizeof(r_servaddr6));
+            }
         }
         if ((ret < 0) && !nonblocking_err_p(errno)) {
             pep_warning("Failed to connect! [%s:%d]", strerror(errno), errno);
@@ -811,14 +865,14 @@ static void poller_sighandler(int signo)
 
 static void *poller_loop(void  __attribute__((unused)) *unused)
 {
-    int epollret, num_works, i, num_clients, iostat;
-    struct pep_proxy *proxy;
+    int                 epollret, num_works, i, num_clients, iostat;
+    struct pep_proxy    *proxy;
     struct pep_endpoint *endp, *target;
-    struct epoll_event *event, events[2 * max_conns];
-    struct list_node *entry, *safe;
-    struct list_head local_list;
-    sigset_t sigset;
-    struct sigaction sa;
+    struct epoll_event  *event, events[2 * max_conns];
+    struct list_node    *entry, *safe;
+    struct list_head    local_list;
+    sigset_t            sigset;
+    struct sigaction    sa;
 
     sigemptyset(&sigset);
     sigaddset(&sigset, POLLER_NEWCONN_SIG);
@@ -1045,6 +1099,7 @@ static void init_pep_threads(void)
     if (ret < 0) {
         pep_error("Failed to create the timer_sch thread! [RET = %d]", ret);
     }
+    
 }
 
 static void init_pep_queues(void)
@@ -1077,6 +1132,7 @@ static void create_threads_pool(int num_threads)
 int main(int argc, char *argv[])
 {
     int c, ret, numfds, peppool_threads = PEPPOOL_THREADS;
+    struct rlimit lim,new_lim;
     void *valptr;
     sigset_t sigset;
 
@@ -1122,7 +1178,7 @@ int main(int argc, char *argv[])
                 portnum = atoi(optarg);
                 break;
             case 'a':
-                strncpy(pepsal_ip_addr, optarg, 19);
+                strncpy(pepsal_ip_addr, optarg, 40);
                 break;
             case 'l':
                 logger.filename = optarg;
@@ -1143,7 +1199,7 @@ int main(int argc, char *argv[])
                 break;
             case 's':
                 snat = 1;
-                strncpy(snat_addr, optarg, 19);
+                strncpy(snat_addr, optarg, 40);
                 break;
             case 'T':
                 peppool_threads = atoi(optarg);
@@ -1155,6 +1211,14 @@ int main(int argc, char *argv[])
     }
     openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON);
 
+    /*setting new ressources limit*/
+    new_lim.rlim_cur = (4 * max_conns);
+    new_lim.rlim_max = 1048576;
+    if (setrlimit(RLIMIT_NOFILE,&new_lim) ==  -1){
+        pep_error("Failed to set new ressources limits");
+
+    }
+    
     if (background) {
         PEP_DEBUG("Daemonizing...");
         if (daemon(0, 1) < 0) {
@@ -1168,7 +1232,7 @@ int main(int argc, char *argv[])
         pep_error("Failed to initialize SYN table!");
     }
 
-    epoll_fd = epoll_create(max_conns * 2);
+    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 
     sigemptyset(&sigset);
     sigaddset(&sigset, POLLER_NEWCONN_SIG);

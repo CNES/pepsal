@@ -45,7 +45,7 @@ struct pep_pipes {
 };
 
 struct pep_endpoint{
-    int addr;
+    uint16_t addr[8];
     unsigned short port;
     int fd;
     struct pep_pipes buf;

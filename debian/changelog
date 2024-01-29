@@ -1,14 +1,24 @@
+pepsal (2.0.0) focal; urgency=low
+
+  * IPv6 support
+  * Zero-copy of packets going through PEPSal (splicing them to their
+    destination using a pipe)
+  * Adjustable number of worker threads
+  * Improved dependencies detection during compilation
+
+ -- PEPSal Maintainers <admin@pepsal.org>  Thu, 11 Apr 2019 15:52:38 +0200
+
 pepsal (1.9.1) trusty; urgency=low
 
   * Removed useless bind on proxy local socket
 
- -- OpenSAND Maintainers <admin@opensand.org>  Thu, 11 Apr 2019 15:52:38 +0200
+ -- PEPSal Maintainers <admin@pepsal.org>  Thu, 11 Apr 2019 15:52:38 +0200
 
 pepsal (1.9.0) trusty; urgency=low
 
   * Added support for TCP FastOpen and TPROXY
 
- -- OpenSAND Maintainers <admin@opensand.org>  Fri, 31 Mar 2017 10:12:38 +0200
+ -- PEPSal Maintainers <admin@pepsal.org>  Fri, 31 Mar 2017 10:12:38 +0200
 
 pepsal (1.8.8) trusty; urgency=low
 
