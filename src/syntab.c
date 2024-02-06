@@ -8,61 +8,78 @@
  *
  *
  */
-#include "config.h"
-#include <string.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <stdio.h>
-#include "pepsal.h"
 #include "syntab.h"
+#include "config.h"
+#include "pepsal.h"
+#include <assert.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 struct syn_table syntab;
 
 /* Bob Jenkin's MIX64 function */
-#define BJ_MIX(a, b, c)                            \
-    do {                                           \
-        a -= b; a -= c; a ^= (c>>13);              \
-        b -= c; b -= a; b ^= (a<<8);               \
-        c -= a; c -= b; c ^= (b>>13);              \
-        a -= b; a -= c; a ^= (c>>12);              \
-        b -= c; b -= a; b ^= (a<<16);              \
-        c -= a; c -= b; c ^= (b>>5);               \
-        a -= b; a -= c; a ^= (c>>3);               \
-        b -= c; b -= a; b ^= (a<<10);              \
-        c -= a; c -= b; c ^= (b>>15);              \
+#define BJ_MIX(a, b, c) \
+    do {                \
+        a -= b;         \
+        a -= c;         \
+        a ^= (c >> 13); \
+        b -= c;         \
+        b -= a;         \
+        b ^= (a << 8);  \
+        c -= a;         \
+        c -= b;         \
+        c ^= (b >> 13); \
+        a -= b;         \
+        a -= c;         \
+        a ^= (c >> 12); \
+        b -= c;         \
+        b -= a;         \
+        b ^= (a << 16); \
+        c -= a;         \
+        c -= b;         \
+        c ^= (b >> 5);  \
+        a -= b;         \
+        a -= c;         \
+        a ^= (c >> 3);  \
+        b -= c;         \
+        b -= a;         \
+        b ^= (a << 10); \
+        c -= a;         \
+        c -= b;         \
+        c ^= (b >> 15); \
     } while (0)
 
-
-
-static unsigned int syntab_hashfunction(void *k)
+static unsigned int
+syntab_hashfunction(void* k)
 {
-    struct syntab_key *sk = k;
+    struct syntab_key* sk = k;
     unsigned int a, b, c;
     uint8_t key[16];
 
-    for (int i = 0; i < 16; ++i) {
-        key[i] = sk->addr8[i];
-    }
+    memcpy(key, sk->addr8, 16 * sizeof(uint8_t));
     c = sk->port;
     a = b = 0x9e3779b9; /* the golden ratio */
 
-   /* Robert Jenkins' 32 bit integer hash function */
-    a=a+(key[0]+(key[1]<<8)+(key[2]<<16) +(key[3]<<24));
-    b=b+(key[4]+(key[5]<<8)+(key[6]<<16) +(key[7]<<24));
-    c=c+(key[8]+(key[9]<<8)+(key[10]<<16)+(key[11]<<24));
+    /* Robert Jenkins' 32 bit integer hash function */
+    a = a + (key[0] + (key[1] << 8) + (key[2] << 16) + (key[3] << 24));
+    b = b + (key[4] + (key[5] << 8) + (key[6] << 16) + (key[7] << 24));
+    c = c + (key[8] + (key[9] << 8) + (key[10] << 16) + (key[11] << 24));
     BJ_MIX(a, b, c);
+
     c += 16;
-    a=a+(key[15]<<24);
-    a=a+(key[14]<<16);
-    a=a+(key[13]<<8);
-    a=a+key[12];
+    a = a + (key[15] << 24);
+    a = a + (key[14] << 16);
+    a = a + (key[13] << 8);
+    a = a + key[12];
     BJ_MIX(a, b, c);
 
     return c;
 }
 
-static int __keyeqfn(void *k1, void *k2)
+static int
+__keyeqfn(void* k1, void* k2)
 {
     return (memcmp(k1, k2, sizeof(struct syntab_key)) == 0);
 }
@@ -93,46 +110,31 @@ int syntab_init(int num_conns)
     return 0;
 }
 
-static __inline void syntab_make_key(struct syntab_key *key,
-                                     uint16_t addr[8], unsigned short port,
-                                     unsigned short dst_port, uint16_t dst_addr[8])
+static __inline void
+__syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key)
 {
-    memset(key, 0, sizeof(*key));
-    for(size_t i; i<8;i++){
-        (key->addr)[i] = addr[i];
-    }
-    key->port = port;
-    #ifdef ENABLE_DST_IN_KEY
-    key->dst_port = dst_port;
-
-    for(size_t i; i<8;i++){
-        (key->dst_addr)[i] = dst_addr[i];
-    }
-    #endif
-}
-
-void syntab_format_key(struct pep_proxy *proxy, struct syntab_key *key)
-{
-    for(size_t i; i<8;i++){
-        (key->addr)[i] = proxy->src.addr[i];
-    }
+    memcpy(key->addr, proxy->src.addr, 8 * sizeof(uint16_t));
     key->port = proxy->src.port;
-    #ifdef ENABLE_DST_IN_KEY
+#ifdef ENABLE_DST_IN_KEY
+    memcpy(key->dst_addr, proxy->dst.addr, 8 * sizeof(uint16_t));
     key->dst_port = proxy->dst.port;
-    for(size_t i; i<8;i++){
-        (key->dst_addr)[i] = proxy->dst.addr[i];
-    }
-    #endif
+#endif
 }
 
-struct pep_proxy *syntab_find(struct syntab_key *key)
+void syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key)
+{
+    __syntab_format_key(proxy, key);
+}
+
+struct pep_proxy*
+syntab_find(struct syntab_key* key)
 {
     return hashtable_search(syntab.hash, key);
 }
 
-int syntab_add(struct pep_proxy *proxy)
+int syntab_add(struct pep_proxy* proxy)
 {
-    struct syntab_key *key;
+    struct syntab_key* key;
     int ret;
 
     assert(proxy->status == PST_PENDING);
@@ -142,7 +144,7 @@ int syntab_add(struct pep_proxy *proxy)
         return -1;
     }
 
-    syntab_make_key(key, proxy->src.addr, proxy->src.port, proxy->dst.port,proxy->dst.addr);
+    __syntab_format_key(proxy, key);
     ret = hashtable_insert(syntab.hash, key, proxy);
     if (ret == 0) {
         free(key);
@@ -155,11 +157,11 @@ int syntab_add(struct pep_proxy *proxy)
     return 0;
 }
 
-void syntab_delete(struct pep_proxy *proxy)
+void syntab_delete(struct pep_proxy* proxy)
 {
     struct syntab_key key;
 
-    syntab_make_key(&key, proxy->src.addr, proxy->src.port, proxy->dst.port,proxy->dst.addr);
+    __syntab_format_key(proxy, &key);
     hashtable_remove(syntab.hash, &key);
     list_del(&proxy->lnode);
     syntab.num_items--;

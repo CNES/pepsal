@@ -13,52 +13,51 @@
 #ifndef __PEPSAL_SYNTAB_H
 #define __PEPSAL_SYNTAB_H
 #include "config.h"
-#include <pthread.h>
 #include "hashtable.h"
 #include "list.h"
 #include "pepsal.h"
+#include <pthread.h>
 
-struct syn_table{
-    struct hashtable  *hash;
-    struct list_head   conns;
-    pthread_rwlock_t   lock;
-    int                num_items;
+struct syn_table {
+    struct hashtable* hash;
+    struct list_head conns;
+    pthread_rwlock_t lock;
+    int num_items;
 };
 
-struct syntab_key {   
-    union 
-    {
+struct syntab_key {
+    union {
         uint16_t addr[8];
         uint8_t addr8[16];
     };
-    
-    unsigned short port;
-    #ifdef ENABLE_DST_IN_KEY
-    unsigned short dst_port;
-    union 
-    {
+#ifdef ENABLE_DST_IN_KEY
+    union {
         uint16_t dst_addr[8];
         uint8_t dst_addr8[16];
     };
-    #endif
+#endif
+    unsigned short port;
+#ifdef ENABLE_DST_IN_KEY
+    unsigned short dst_port;
+#endif
 } __attribute__((packed));
 
 #define GET_SYNTAB() (&syntab)
 
-#define SYNTAB_LOCK_READ()    pthread_rwlock_rdlock(&(GET_SYNTAB())->lock)
-#define SYNTAB_LOCK_WRITE()   pthread_rwlock_wrlock(&(GET_SYNTAB())->lock)
-#define SYNTAB_UNLOCK_READ()  pthread_rwlock_unlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_LOCK_READ() pthread_rwlock_rdlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_LOCK_WRITE() pthread_rwlock_wrlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_UNLOCK_READ() pthread_rwlock_unlock(&(GET_SYNTAB())->lock)
 #define SYNTAB_UNLOCK_WRITE() pthread_rwlock_unlock(&(GET_SYNTAB())->lock)
 
 extern struct syn_table syntab;
 
-#define syntab_foreach_connection(con)                                  \
+#define syntab_foreach_connection(con) \
     list_for_each_entry(&GET_SYNTAB()->conns, con, struct pep_proxy, lnode)
 
 int syntab_init(int num_conns);
-void syntab_format_key(struct pep_proxy *proxy, struct syntab_key *key);
-struct pep_proxy *syntab_find(struct syntab_key *key);
-int syntab_add(struct pep_proxy *proxy);
-void syntab_delete(struct pep_proxy *proxy);
+void syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key);
+struct pep_proxy* syntab_find(struct syntab_key* key);
+int syntab_add(struct pep_proxy* proxy);
+void syntab_delete(struct pep_proxy* proxy);
 
 #endif /* __PEPSAL_SYNTAB_H */
