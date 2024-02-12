@@ -11,7 +11,6 @@
 static inline ssize_t
 pep_receive(struct pep_endpoint* endp)
 {
-    int iostat;
     ssize_t rb;
 
     if (endp->iostat & (PEP_IOERR | PEP_IOEOF)) {
@@ -118,7 +117,7 @@ void* workers_loop(void* arg)
     struct worker_thread_arguments* args = (struct worker_thread_arguments*)arg;
     struct pep_proxy* proxy;
     struct list_head local_list;
-    int ret, ready_items;
+    int ready_items;
 
     PEPQUEUE_LOCK(args->active_queue);
     for (;;) {

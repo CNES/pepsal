@@ -40,7 +40,8 @@ struct syntab_key {
 #ifdef ENABLE_DST_IN_KEY
     unsigned short dst_port;
 #endif
-} __attribute__((packed));
+    //} __attribute__((packed));
+};
 
 #define GET_SYNTAB() (&syntab)
 
@@ -59,5 +60,6 @@ void syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key);
 struct pep_proxy* syntab_find(struct syntab_key* key);
 int syntab_add(struct pep_proxy* proxy);
 void syntab_delete(struct pep_proxy* proxy);
+int syntab_add_if_not_duplicate(struct pep_proxy* proxy);
 
 #endif /* __PEPSAL_SYNTAB_H */

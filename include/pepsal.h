@@ -24,6 +24,7 @@ enum proxy_status {
     PST_OPEN,
     PST_CONNECT,
     PST_PENDING,
+    PST_PENDING_IN,
     PST_INVAL,
 };
 
@@ -46,7 +47,10 @@ struct pep_pipes {
 };
 
 struct pep_endpoint {
-    uint16_t addr[8];
+    union {
+        uint16_t addr[8];
+        uint32_t addr32[4];
+    };
     unsigned short port;
     int fd;
     struct pep_pipes buf;
@@ -79,5 +83,6 @@ struct pep_proxy {
 
 struct pep_proxy* alloc_proxy(void);
 void destroy_proxy(struct pep_proxy* proxy, int epoll_fd);
+void unpin_proxy(struct pep_proxy* proxy);
 
 #endif /* !__PEPSAL_H */

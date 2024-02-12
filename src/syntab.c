@@ -8,9 +8,12 @@
  *
  *
  */
+
 #include "syntab.h"
 #include "config.h"
+#include "log.h"
 #include "pepsal.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
@@ -58,7 +61,7 @@ syntab_hashfunction(void* k)
     unsigned int a, b, c;
     uint8_t key[16];
 
-    memcpy(key, sk->addr8, 16 * sizeof(uint8_t));
+    memcpy(key, sk->addr8, 16 * sizeof(*key));
     c = sk->port;
     a = b = 0x9e3779b9; /* the golden ratio */
 
@@ -113,10 +116,10 @@ int syntab_init(int num_conns)
 static __inline void
 __syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key)
 {
-    memcpy(key->addr, proxy->src.addr, 8 * sizeof(uint16_t));
+    memcpy(key->addr, proxy->src.addr, 8 * sizeof(*key->addr));
     key->port = proxy->src.port;
 #ifdef ENABLE_DST_IN_KEY
-    memcpy(key->dst_addr, proxy->dst.addr, 8 * sizeof(uint16_t));
+    memcpy(key->dst_addr, proxy->dst.addr, 8 * sizeof(*key->dst_addr));
     key->dst_port = proxy->dst.port;
 #endif
 }
@@ -138,7 +141,7 @@ int syntab_add(struct pep_proxy* proxy)
     int ret;
 
     assert(proxy->status == PST_PENDING);
-    key = calloc(sizeof(*key), 1);
+    key = calloc(1, sizeof(*key));
     if (!key) {
         errno = ENOMEM;
         return -1;
@@ -165,4 +168,24 @@ void syntab_delete(struct pep_proxy* proxy)
     hashtable_remove(syntab.hash, &key);
     list_del(&proxy->lnode);
     syntab.num_items--;
+}
+
+int syntab_add_if_not_duplicate(struct pep_proxy* proxy)
+{
+    struct syntab_key key;
+
+    __syntab_format_key(proxy, &key);
+    SYNTAB_LOCK_WRITE();
+    struct pep_proxy* dup = hashtable_search(syntab.hash, &key);
+    if (dup != NULL) {
+        PEP_DEBUG_DP(dup, "Duplicate SYN. Dropping...");
+        SYNTAB_UNLOCK_WRITE();
+        return -1;
+    }
+
+    /* add to the table... */
+    proxy->status = PST_PENDING;
+    int ret = syntab_add(proxy);
+    SYNTAB_UNLOCK_WRITE();
+    return ret;
 }

@@ -19,9 +19,8 @@ static const unsigned int primes[] = {
     786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653,
     100663319, 201326611, 402653189, 805306457, 1610612741
 };
-const unsigned int prime_table_length = sizeof(primes) / sizeof(primes[0]);
+const size_t prime_table_length = sizeof(primes) / sizeof(primes[0]);
 const float max_load_factor = 0.65;
-static int DEBUG = 0;
 /*****************************************************************************/
 struct hashtable*
 create_hashtable(unsigned int minsize,
@@ -40,15 +39,14 @@ create_hashtable(unsigned int minsize,
             break;
         }
     }
-    h = (struct hashtable*)malloc(sizeof(struct hashtable));
+    h = (struct hashtable*)malloc(sizeof(*h));
     if (NULL == h)
         return NULL; /*oom*/
-    h->table = (struct entry**)malloc(sizeof(struct entry*) * size);
+    h->table = (struct entry**)calloc(size, sizeof(*h->table));
     if (NULL == h->table) {
         free(h);
         return NULL;
     } /*oom*/
-    memset(h->table, 0, size * sizeof(struct entry*));
     h->tablelength = size;
     h->primeindex = pindex;
     h->entrycount = 0;
@@ -88,9 +86,8 @@ hashtable_expand(struct hashtable* h)
         return 0;
     newsize = primes[++(h->primeindex)];
 
-    newtable = (struct entry**)malloc(sizeof(struct entry*) * newsize);
+    newtable = (struct entry**)calloc(newsize, sizeof(*newtable));
     if (NULL != newtable) {
-        memset(newtable, 0, newsize * sizeof(struct entry*));
         /* This algorithm is not 'stable'. ie. it reverses the list
          * when it transfers entries between the tables */
         for (i = 0; i < h->tablelength; i++) {
@@ -106,7 +103,7 @@ hashtable_expand(struct hashtable* h)
     }
     /* Plan B: realloc instead */
     else {
-        newtable = (struct entry**)realloc(h->table, newsize * sizeof(struct entry*));
+        newtable = (struct entry**)realloc(h->table, newsize * sizeof(*newtable));
         if (NULL == newtable) {
             (h->primeindex)--;
             return 0;
@@ -151,7 +148,7 @@ int hashtable_insert(struct hashtable* h, void* k, void* v)
          * element may be ok. Next time we insert, we'll try expanding again.*/
         hashtable_expand(h);
     }
-    e = (struct entry*)malloc(sizeof(struct entry));
+    e = (struct entry*)malloc(sizeof(*e));
     if (NULL == e) {
         --(h->entrycount);
         return 0;

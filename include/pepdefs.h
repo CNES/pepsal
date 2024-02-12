@@ -45,6 +45,7 @@
 
 /* Maximum size of a string to represent an IP address */
 #define IP_ADDR_LEN 40
+#define MAC_ADDR_LEN 18
 
 #ifndef offsetof
 #define offsetof(type, field) \

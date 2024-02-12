@@ -11,7 +11,6 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -21,34 +20,17 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-static inline void
-unpin_proxy(struct pep_proxy* proxy)
-{
-    if (atomic_dec(&proxy->refcnt) == 1) {
-        PEP_DEBUG_DP(proxy, "Free proxy");
-        assert(atomic_read(&proxy->refcnt) == 0);
-        free(proxy);
-    }
-}
-
-static int
+static inline int
 save_proxy_from_socket(struct sockaddr_in6 orig_dst,
     struct sockaddr_in6 cliaddr)
 {
-    char* buffer;
-    struct pep_proxy* dup;
-    struct syntab_key key;
-    int id = 0, ret;
-
     PEP_DEBUG("Saving new SYN...");
-
     struct pep_proxy* proxy = alloc_proxy();
     if (!proxy) {
         pep_warning("Failed to allocate new pep_proxy instance! [%s:%d]",
             strerror(errno),
             errno);
-        ret = -1;
-        goto err;
+        return -1;
     }
 
     /* Setup source and destination endpoints */
@@ -61,40 +43,21 @@ save_proxy_from_socket(struct sockaddr_in6 orig_dst,
     proxy->src.port = ntohs(cliaddr.sin6_port);
     proxy->dst.port = ntohs(orig_dst.sin6_port);
     proxy->syn_time = time(NULL);
-    syntab_format_key(proxy, &key);
 
     /* Check for duplicate syn, and drop it.
      * This happens when RTT is too long and we
      * still didn't establish the connection.
      */
-    SYNTAB_LOCK_WRITE();
-    dup = syntab_find(&key);
-    if (dup != NULL) {
-        PEP_DEBUG_DP(dup, "Duplicate SYN. Dropping...");
-        SYNTAB_UNLOCK_WRITE();
-        goto err;
-    }
-
-    /* add to the table... */
-    proxy->status = PST_PENDING;
-    ret = syntab_add(proxy);
-    SYNTAB_UNLOCK_WRITE();
+    int ret = syntab_add_if_not_duplicate(proxy);
     if (ret < 0) {
         pep_warning("Failed to insert pep_proxy into a hash table!");
-        goto err;
-    }
-
-    return ret;
-
-err:
-    if (proxy != NULL) {
         unpin_proxy(proxy);
     }
 
     return ret;
 }
 
-static int
+static inline int
 configure_dest_socket(int socket_fd)
 {
     int optval;
@@ -124,7 +87,7 @@ configure_dest_socket(int socket_fd)
     if (socket_opts.quickack) {
         optval = 1;
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_QUICKACK, &optval, sizeof(optval)) == -1) {
-            pep_error("Failed to set TCP QUICACK option! [%s:%d]", strerror(errno), errno);
+            pep_warning("Failed to set TCP QUICACK option! [%s:%d]", strerror(errno), errno);
             return -1;
         }
     }
@@ -132,15 +95,15 @@ configure_dest_socket(int socket_fd)
     if (socket_opts.nodelay) {
         optval = 1;
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval)) == -1) {
-            pep_error("Failed to set TCP NODELAY option! [%s:%d]", strerror(errno), errno);
+            pep_warning("Failed to set TCP NODELAY option! [%s:%d]", strerror(errno), errno);
             return -1;
         }
     }
 
-    if (socket_opts.corck) {
+    if (socket_opts.cork) {
         optval = 1;
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_CORK, &optval, sizeof(optval)) == -1) {
-            pep_error("Failed to set TCP CORCK option! [%s:%d]", strerror(errno), errno);
+            pep_warning("Failed to set TCP CORCK option! [%s:%d]", strerror(errno), errno);
             return -1;
         }
     }
@@ -148,15 +111,15 @@ configure_dest_socket(int socket_fd)
     if (socket_opts.maxseg_size) {
         optval = socket_opts.maxseg_size;
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_MAXSEG, &optval, sizeof(optval)) == -1) {
-            pep_error("Failed to set TCP MSS option! [%s:%d]", strerror(errno), errno);
+            pep_warning("Failed to set TCP MSS option! [%s:%d]", strerror(errno), errno);
             return -1;
         }
     }
 
-    if (socket_opts.congestion_algo != NULL && socket_opts.congestion_algo[0] != '\0') {
-        socklen_t len = strlen(socket_opts.congestion_algo);
+    socklen_t len = strlen(socket_opts.congestion_algo);
+    if (len) {
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_CONGESTION, &socket_opts.congestion_algo, len) == -1) {
-            pep_error("Failed to set TCP Congestion Control algorithm! [%s:%d]", strerror(errno), errno);
+            pep_warning("Failed to set TCP Congestion Control algorithm! [%s:%d]", strerror(errno), errno);
             return -1;
         }
     }
@@ -164,19 +127,51 @@ configure_dest_socket(int socket_fd)
     return 0;
 }
 
+int configure_out_socket(struct pep_proxy* proxy, int is_ipv4)
+{
+    /*
+     * The proxy we fetched from the SYN table is in PST_PENDING state.
+     * Now we're going to setup connection for it and configure endpoints.
+     * While the proxy is in PST_PENDING state it may be possibly removed
+     * by the garbage connections collector. Collector is invoked every N
+     * seconds and removes from SYN table all pending connections
+     * that were not activated during predefined interval. Thus we have
+     * to pin our proxy to protect ourself from segfault.
+     */
+    atomic_inc(&proxy->refcnt);
+    increase_connection_count();
+    assert(proxy->status == PST_PENDING);
+    SYNTAB_UNLOCK_READ();
+
+    int out_fd;
+    if (is_ipv4) {
+        out_fd = socket(AF_INET, SOCK_STREAM, 0);
+    } else {
+        out_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    }
+
+    if (out_fd < 0) {
+        pep_warning("Failed to create socket! [%s:%d]", strerror(errno), errno);
+        return out_fd;
+    }
+
+    int ret = configure_dest_socket(out_fd);
+    if (ret < 0) {
+        close(out_fd);
+        return ret;
+    };
+
+    return out_fd;
+}
+
 void* listener_loop(void* arg)
 {
     struct listener_thread_arguments* args = (struct listener_thread_arguments*)arg;
-    int listenfd, optval, ret, connfd, out_fd, error;
-    struct sockaddr_in r_servaddr;
-    struct sockaddr_in6 cliaddr, orig_dst, servaddr, r_servaddr6;
-    int addrlen = sizeof(orig_dst);
-    char ipbuf[IP_ADDR_LEN], port_str[6];
-    socklen_t len;
+    int listenfd, optval, ret, connfd, out_fd;
+    struct sockaddr_in6 cliaddr, orig_dst, servaddr;
+    socklen_t addrlen = sizeof(orig_dst), len;
+    char ipbuf[IP_ADDR_LEN];
     struct pep_proxy* proxy;
-    struct hostent* host;
-    struct addrinfo hints, *host_res;
-    unsigned short r_port, c_port;
     struct syntab_key key;
 
     listenfd = socket(AF_INET6, SOCK_STREAM, 0);
@@ -227,7 +222,7 @@ void* listener_loop(void* arg)
     for (;;) {
         out_fd = -1;
         proxy = NULL;
-        len = sizeof(struct sockaddr_in6);
+        len = sizeof(cliaddr);
         connfd = accept(listenfd, (struct sockaddr*)&cliaddr, &len);
         if (connfd < 0) {
             pep_warning("accept() failed! [Errno: %s, %d]", strerror(errno), errno);
@@ -244,15 +239,15 @@ void* listener_loop(void* arg)
          * Try to find incomming connection in our SYN table
          * It must be already there waiting for activation.
          */
-        for (int i = 0; i < 8; ++i) {
+        for (size_t i = 0; i < 8; ++i) {
             key.addr[i] = ntohs(cliaddr.sin6_addr.s6_addr16[i]);
+#ifdef ENABLE_DST_IN_KEY
+            key.dst_addr[i] = ntohs(orig_dst.sin6_addr.s6_addr16[i]);
+#endif
         }
         key.port = ntohs(cliaddr.sin6_port);
 #ifdef ENABLE_DST_IN_KEY
         key.dst_port = ntohs(orig_dst.sin6_port);
-        for (int i = 0; i < 8; ++i) {
-            key.dst_addr[i] = ntohs(orig_dst.sin6_addr.s6_addr16[i]);
-        }
 #endif
         toip6(ipbuf, key.addr);
         PEP_DEBUG("New incomming connection from: %s:%d ", ipbuf, key.port);
@@ -279,57 +274,21 @@ void* listener_loop(void* arg)
             goto close_connection;
         }
 
-        /*
-         * The proxy we fetched from the SYN table is in PST_PENDING state.
-         * Now we're going to setup connection for it and configure endpoints.
-         * While the proxy is in PST_PENDING state it may be possibly removed
-         * by the garbage connections collector. Collector is invoked every N
-         * seconds and removes from SYN table all pending connections
-         * that were not activated during predefined interval. Thus we have
-         * to pin our proxy to protect ourself from segfault.
-         */
-        atomic_inc(&proxy->refcnt);
-        assert(proxy->status == PST_PENDING);
-        SYNTAB_UNLOCK_READ();
-
-        r_port = proxy->dst.port;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_protocol = IPPROTO_TCP;
-        sprintf(port_str, "%d", r_port);
-        toip6(ipbuf, proxy->dst.addr);
-        error = getaddrinfo(ipbuf, port_str, &hints, &host_res);
-        if (error) {
-            pep_warning("Failed to get host %s!", ipbuf);
-            goto close_connection;
-        }
         /* Check if received connexion is IPV6 or IPV4-mapped connexion*/
         int is_ipv4 = IN6_IS_ADDR_V4MAPPED(&cliaddr.sin6_addr);
-        if (is_ipv4) {
-            memset(&r_servaddr, 0, sizeof(r_servaddr));
-            r_servaddr.sin_addr.s_addr = ((struct sockaddr_in6*)(host_res->ai_addr))->sin6_addr.s6_addr32[3];
-            toip(ipbuf, ntohl(r_servaddr.sin_addr.s_addr));
-            PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
-            r_servaddr.sin_family = AF_INET;
-            r_servaddr.sin_port = htons(r_port);
-            out_fd = socket(AF_INET, SOCK_STREAM, 0);
-        } else {
-            PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
-            memset(&r_servaddr6, 0, sizeof(r_servaddr6));
-            r_servaddr6.sin6_family = AF_INET6;
-            r_servaddr6.sin6_addr = ((struct sockaddr_in6*)(host_res->ai_addr))->sin6_addr;
-            r_servaddr6.sin6_port = htons(r_port);
-            out_fd = socket(AF_INET6, SOCK_STREAM, 0);
-        }
-        freeaddrinfo(host_res);
-        if (out_fd < 0) {
-            pep_warning("Failed to create socket! [%s:%d]", strerror(errno), errno);
-            goto close_connection;
-        }
-
-        increase_connection_count();
-        if (configure_dest_socket(out_fd) < 0) {
+        switch (proxy->status) {
+        case PST_PENDING:
+            out_fd = configure_out_socket(proxy, is_ipv4); // Contains SYNTAB_UNLOCK_READ();
+            if (out_fd < 0) {
+                goto close_connection;
+            }
+            break;
+        case PST_PENDING_IN:
+            out_fd = proxy->dst.fd;
+            SYNTAB_UNLOCK_READ();
+            break;
+        default:
+            SYNTAB_UNLOCK_READ();
             goto close_connection;
         }
 
@@ -341,11 +300,40 @@ void* listener_loop(void* arg)
                 PAGE_SIZE,
                 SPLICE_F_MOVE | SPLICE_F_MORE | SPLICE_F_NONBLOCK);
         } else {
+            unsigned short r_port = proxy->dst.port;
+            char port_str[6];
+            struct addrinfo hints, *host_res;
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP;
+            sprintf(port_str, "%d", r_port);
+            toip6(ipbuf, proxy->dst.addr);
+            if (getaddrinfo(ipbuf, port_str, &hints, &host_res) != 0) {
+                pep_warning("Failed to get host %s!", ipbuf);
+                goto close_connection;
+            }
+
             if (is_ipv4) {
+                struct sockaddr_in r_servaddr;
+                memset(&r_servaddr, 0, sizeof(r_servaddr));
+                r_servaddr.sin_addr.s_addr = ((struct sockaddr_in6*)(host_res->ai_addr))->sin6_addr.s6_addr32[3];
+                toip(ipbuf, ntohl(r_servaddr.sin_addr.s_addr));
+                PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
+                r_servaddr.sin_family = AF_INET;
+                r_servaddr.sin_port = htons(r_port);
                 ret = connect(out_fd, (struct sockaddr*)&r_servaddr, sizeof(r_servaddr));
             } else {
-                ret = connect(out_fd, (struct sockaddr*)&r_servaddr6, sizeof(r_servaddr6));
+                struct sockaddr_in6 r_servaddr;
+                PEP_DEBUG("Connecting to %s:%d...", ipbuf, r_port);
+                memset(&r_servaddr, 0, sizeof(r_servaddr));
+                r_servaddr.sin6_family = AF_INET6;
+                r_servaddr.sin6_addr = ((struct sockaddr_in6*)(host_res->ai_addr))->sin6_addr;
+                r_servaddr.sin6_port = htons(r_port);
+                ret = connect(out_fd, (struct sockaddr*)&r_servaddr, sizeof(r_servaddr));
             }
+
+            freeaddrinfo(host_res);
         }
         if ((ret < 0) && !nonblocking_err_p()) {
             pep_warning("Failed to connect! [%s:%d]", strerror(errno), errno);
@@ -390,7 +378,6 @@ void* listener_loop(void* arg)
         close(connfd);
         if (out_fd >= 0) {
             close(out_fd);
-            decrease_connection_count();
         }
         if (proxy) {
             destroy_proxy(proxy, args->epoll_fd);

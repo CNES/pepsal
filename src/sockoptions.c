@@ -8,7 +8,7 @@ static struct pep_sockopt socket_options;
 
 void sockopt_init(void)
 {
-    memset(&socket_options, 0, sizeof(struct pep_sockopt));
+    memset(&socket_options, 0, sizeof(socket_options));
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
@@ -29,19 +29,19 @@ int sockopt_is_fastopen(void)
 void sockopt_read(struct pep_sockopt* opts)
 {
     pthread_mutex_lock(&sockopt_mutex);
-    memcpy(opts, &socket_options, sizeof(struct pep_sockopt));
+    memcpy(opts, &socket_options, sizeof(socket_options));
     pthread_mutex_unlock(&sockopt_mutex);
 }
 
 void sockopt_edit(struct pep_sockopt* opts)
 {
     pthread_mutex_lock(&sockopt_mutex);
-    memcpy(&socket_options, opts, sizeof(struct pep_sockopt));
+    memcpy(&socket_options, opts, sizeof(socket_options));
     pthread_mutex_unlock(&sockopt_mutex);
 }
 
 void sockopt_destroy(void)
 {
     pthread_mutex_destroy(&sockopt_mutex);
-    memset(&socket_options, 0, sizeof(struct pep_sockopt));
+    memset(&socket_options, 0, sizeof(socket_options));
 }

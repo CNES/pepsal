@@ -32,12 +32,12 @@ void congestion_control_init(struct congestion_list* cc)
     char* algo = strtok(buffer, separators);
     while (algo != NULL) {
         struct congestion_control* cc_algorithm;
-        cc_algorithm = (struct congestion_control*)malloc(sizeof(struct congestion_control));
+        cc_algorithm = (struct congestion_control*)malloc(sizeof(*cc_algorithm));
         if (cc_algorithm == NULL) {
             congestion_control_destroy(cc);
             pep_error("Failed to allocate memory for congestion control algorithm names storage");
         }
-        strncpy(cc_algorithm->algorithm_name, algo, CONGESTION_ALGORITHM_SIZE);
+        strncpy(cc_algorithm->algorithm_name, algo, CONGESTION_ALGORITHM_SIZE - 1);
         list_add2tail(&cc->queue, &cc_algorithm->node);
         cc->num_items++;
         algo = strtok(NULL, separators);

@@ -7,7 +7,7 @@ struct pep_sockopt {
     int fastopen;
     int quickack;
     int nodelay;
-    int corck;
+    int cork;
     int maxseg_size;
     char congestion_algo[CONGESTION_ALGORITHM_SIZE];
 };

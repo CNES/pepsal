@@ -3,7 +3,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59e)
-AC_INIT(pepsal, 2.0.0)
+AC_INIT(PEPSal, 2.0.0)
 AC_CONFIG_SRCDIR(src)
 AC_CONFIG_HEADER(include/config.h)
 AM_INIT_AUTOMAKE
@@ -16,6 +16,8 @@ AM_INIT_AUTOMAKE
 #AC_DISABLE_SHARED
 #AC_DISABLE_STATIC
 
+# Disable default CFLAGS set by AC_PROG_CC
+: ${CFLAGS="-g3 -O0"}
 # Checks for programs.
 AC_PROG_CC
 AC_PROG_MAKE_SET                                                                                        
@@ -100,7 +102,7 @@ if test x${enable_dst_in_key} != xno; then
     AC_DEFINE([ENABLE_DST_IN_KEY], 1, "Enable dst in key")
 fi
 
-AC_SUBST(AM_CFLAGS, "$AM_CFLAGS -g -Wall ${WERROR} foreign")
+AC_SUBST(CFLAGS, "$CFLAGS -Wall ${WERROR}")
 
 
 AC_CONFIG_FILES(Makefile 

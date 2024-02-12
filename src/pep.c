@@ -16,6 +16,7 @@
 #include "pepqueue.h"
 #include "poller.h"
 #include "scheduler.h"
+#include "sniffer.h"
 #include "sockoptions.h"
 #include "syntab.h"
 #include "workers.h"
@@ -27,18 +28,63 @@
 #include <getopt.h>
 
 static void
-usage(char* name)
+usage(const char* preamble, const char* progname, int success)
 {
-    fprintf(stderr,
-        "Usage: %s [-V] [-h] [-v] [-d] [-f] [q] [n] [k]"
-        " [-p port] [-c max_conn]"
-        " [-l logfile] [-t proxy_lifetime]"
-        " [-g garbage collector interval]"
-        " [-T worker threads count]"
-        " [-C congestion control algorithm]"
-        " [-m TCP max segment size]\n",
-        name);
-    exit(EXIT_SUCCESS);
+    FILE* output = success ? stdout : stderr;
+    fprintf(output, "%s"
+                    "\n\nusage: %s [-h] [-V] [-v] [-d] [-f] [-q] [-n] [-k] [-p PORT]"
+                    "\n       [-c MAXCONN] [-l LOGFILE] [-t LIFETIME] [-g INTERVAL] [-T THREADS]"
+                    "\n       [-C ALGORITHM] [-m MSS] [-M PID] [-s INTERFACE]"
+                    "\n\nbehavioral options:"
+                    "\n  -h, --help              print this help and exit"
+                    "\n  -V, --version           print the program version and exit"
+                    "\n  -v, --verbose           enable printing debug statements"
+                    "\n  -d, --daemon            run in background"
+                    "\n  -p PORT, --port PORT    bind listening socket to this PORT"
+                    "\n  -c MAXCONN, --conns MAXCONN"
+                    "\n                          allow up to MAXCONN connections to be handled"
+                    "\n  -l LOGFILE, --logfile LOGFILE"
+                    "\n                          enable periodic dumps of the syn table into LOGFILE"
+                    "\n  -t LIFETIME, --plifetime LIFETIME"
+                    "\n                          maximum lifetime of a stale connection before being"
+                    "\n                          garbage collected"
+                    "\n  -g INTERVAL, --gc-interval INTERVAL"
+                    "\n                          run the connections garbage collector every INTERVAL"
+                    "\n                          seconds"
+                    "\n  -T THREADS, --threads THREADS"
+                    "\n                          amount of worker threads to use"
+                    "\n\nTCP options:"
+                    "\n  -f, --fastopen          enable TCP fast open on listening and outgoing"
+                    "\n                          sockets"
+                    "\n  -q, --quickack          enable TCP quick ACK on outgoing sockets"
+                    "\n  -n, --nodelay           enable TCP no delay on outgoing sockets"
+                    "\n  -k, --cork              enable TCP CORK on outgoing sockets"
+                    "\n  -C ALGORITHM, --congestion-algo ALGORITHM"
+                    "\n                          name of the TCP congestion control algorithm to use"
+                    "\n                          on outgoing sockets"
+                    "\n  -m MSS, --max-segment-size MSS"
+                    "\n                          enable the TCP maximum segment size option on"
+                    "\n                          outgoing sockets and set it to MSS bytes"
+                    "\n\nsystem integration options:"
+                    "\n  -M PID, --monitoring-pid PID"
+                    "\n                          enable alerts on process id PID when reaching close"
+                    "\n                          to MAXCONN opened connections (SIGUSR1 will be sent"
+                    "\n                          when reaching 99%% of opened connections and SIGUSR2"
+                    "\n                          when capacity drops back to 95%%)"
+                    "\n  -s INTERFACE, --sniff-interface INTERFACE"
+                    "\n                          name of an INTERFACE to sniff and extract ethernet"
+                    "\n                          or IP options from SYN packets in order to replicate"
+                    "\n                          them on outgoing sockets"
+                    "\n",
+        preamble, progname);
+#ifndef DISABLE_SYSLOG
+    closelog();
+#endif
+    if (success) {
+        exit(EXIT_SUCCESS);
+    } else {
+        exit(EXIT_FAILURE);
+    }
 }
 
 static inline void
@@ -46,10 +92,11 @@ serve_forever(int num_threads,
     struct listener_thread_arguments* lst_args,
     struct poller_thread_arguments* poll_args,
     struct scheduler_thread_arguments* sch_args,
-    struct worker_thread_arguments* wkr_args)
+    struct worker_thread_arguments* wkr_args,
+    struct sniffer_thread_arguments* snf_args)
 {
     int ret;
-    pthread_t listener, poller, timer_sch, *workers;
+    pthread_t listener, poller, timer_sch, sniffer, *workers;
 
     PEP_DEBUG("Creating poller thread");
     ret = pthread_create(&poller, NULL, poller_loop, poll_args);
@@ -70,14 +117,20 @@ serve_forever(int num_threads,
         pep_error("Failed to create the timer_sch thread! [RET = %d]", ret);
     }
 
-    workers = calloc(num_threads, sizeof(pthread_t));
+    PEP_DEBUG("Creating sniffer thread");
+    ret = pthread_create(&sniffer, NULL, sniffer_loop, snf_args);
+    if (ret != 0) {
+        pep_error("Failed to create the sniffer thread! [RET = %d]", ret);
+    }
+
+    workers = calloc(num_threads, sizeof(*workers));
     if (!workers) {
         pep_error("Failed to create threads pool of %d threads!", num_threads);
     }
     for (size_t i = 0; i < num_threads; ++i) {
         ret = pthread_create(&workers[i], NULL, workers_loop, wkr_args);
         if (ret != 0) {
-            pep_error("Failed to create %d thread in pool! [RET = %d]", i + 1, ret);
+            pep_error("Failed to create %zu thread in pool! [RET = %d]", i + 1, ret);
         }
     }
 
@@ -86,16 +139,20 @@ serve_forever(int num_threads,
     pthread_join(listener, &valptr);
     pthread_join(poller, &valptr);
     pthread_join(timer_sch, &valptr);
+    pthread_join(sniffer, &valptr);
     for (size_t i = 0; i < num_threads; ++i) {
         pthread_join(workers[i], &valptr);
     }
 }
 
-void parse_arguments(int argc, char* argv[], int* thread_count, int* background, struct listener_thread_arguments* lst_args, struct scheduler_thread_arguments* sch_args)
+void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
+    struct listener_thread_arguments* lst_args,
+    struct scheduler_thread_arguments* sch_args,
+    struct sniffer_thread_arguments* snf_args)
 {
     unsigned int max_conns = (PEP_MIN_CONNS + PEP_MAX_CONNS) / 2, monitoring_pid = 0;
     struct pep_sockopt sockopts;
-    memset(&sockopts, 0, sizeof(struct pep_sockopt));
+    memset(&sockopts, 0, sizeof(sockopts));
     sockopt_init();
 
     struct congestion_list cc_algorithms;
@@ -115,10 +172,11 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
         { "threads", 1, 0, 'T' },
         { "quickack", 0, 0, 'q' },
         { "nodelay", 0, 0, 'n' },
-        { "corck", 0, 0, 'k' },
-        { "congestion_algo", 0, 0, 'C' },
-        { "max_segment_size", 0, 0, 'm' },
-        { "monitoring_pid", 0, 0, 'M' },
+        { "cork", 0, 0, 'k' },
+        { "congestion-algo", 0, 0, 'C' },
+        { "max-segment-size", 0, 0, 'm' },
+        { "monitoring-pid", 0, 0, 'M' },
+        { "sniff-interface", 0, 0, 's' },
         { 0, 0, 0, 0 }, // Sentinel
     };
 
@@ -126,21 +184,38 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
         int option_index = 0;
         int c = getopt_long(argc,
             argv,
-            "dvVhfqnkp:a:l:g:t:c:T:C:m:M:",
+            "dvVhfqnkp:l:g:t:c:T:C:m:M:s:",
             long_options,
             &option_index);
         if (c == -1)
             break;
 
         switch (c) {
+        case 'h':
+            char preamble[1100];
+            snprintf(preamble, sizeof(preamble),
+                "%s - A Performance Enhancing Proxy for TCP satellite connections"
+                "\n\n    %s is a Performance Enhancing Proxy, used for optimizing TCP connections"
+                "\non satellite links. It works at multiple layers (IP, TCP, and Application): it"
+                "\nuses netfilter to intercept those connections that would involve a satellite"
+                "\nlinks and \"steals\" the TCP SYN packet in the three-way handshake phase of a TCP"
+                "\nconnection, then pretends to be the other side of that connection, and initiate"
+                "\na new connection to the real endpoint, using a userspace application that"
+                "\ndirectly copy data between the two sockets. It thus effectively splits the TCP"
+                "\nconnection in two."
+                "\n\n    %s represents a valid solution for the degraded TCP performance when"
+                "\nsatellite links are involved. It does not require modifications on content"
+                "\nservers, or satellite receivers, it is sufficient to set it up in a computer"
+                "\ntraversed by the TCP connections. It is designed to follow the advices in IETF"
+                "\nRFC3135, to implement a simple TCP split technique.",
+                PACKAGE_STRING, PACKAGE_NAME, PACKAGE_NAME);
+            usage(preamble, argv[0], 1);
+            break;
         case 'd':
             *background = 1;
             break;
         case 'v':
             DEBUG = 1;
-            break;
-        case 'h':
-            usage(argv[0]); // implies exit
             break;
         case 'f':
             sockopts.fastopen = 1;
@@ -160,7 +235,11 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
         case 'c':
             max_conns = atoi(optarg);
             if ((max_conns < PEP_MIN_CONNS) || (max_conns > PEP_MAX_CONNS)) {
-                usage(argv[0]);
+                char preamble[100];
+                snprintf(preamble, sizeof(preamble),
+                    "maximum number of connections should be between %d and %d, not %d",
+                    PEP_MIN_CONNS, PEP_MAX_CONNS, max_conns);
+                usage(preamble, argv[0], 0);
             }
             break;
         case 'T':
@@ -173,15 +252,16 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
             sockopts.nodelay = 1;
             break;
         case 'k':
-            sockopts.corck = 1;
+            sockopts.cork = 1;
             break;
         case 'C':
-            strncpy(sockopts.congestion_algo, optarg, CONGESTION_ALGORITHM_SIZE);
+            strncpy(sockopts.congestion_algo, optarg, CONGESTION_ALGORITHM_SIZE - 1);
             if (congestion_control_exists(&cc_algorithms, sockopts.congestion_algo) != 0) {
-                fprintf(stderr,
-                    "Requested congestion control algorithm is not "
-                    "available on the system \n");
-                usage(argv[0]);
+                char preamble[100];
+                snprintf(preamble, sizeof(preamble),
+                    "congestion control algorithm '%s' is not available on the system",
+                    sockopts.congestion_algo);
+                usage(preamble, argv[0], 0);
             }
             break;
         case 'm':
@@ -190,8 +270,11 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
         case 'M':
             monitoring_pid = atoi(optarg);
             break;
+        case 's':
+            snf_args->interface_name = optarg;
+            break;
         case 'V':
-            printf("PEPSal ver. %s\n", VERSION);
+            printf("%s ver. %s\n", PACKAGE_NAME, VERSION);
             exit(EXIT_SUCCESS);
         }
     }
@@ -236,7 +319,10 @@ int main(int argc, char* argv[])
         .active_queue = &active_queue,
         .ready_queue = &ready_queue,
     };
-    parse_arguments(argc, argv, &peppool_threads, &background, &lst_args, &sch_args);
+    struct sniffer_thread_arguments snf_args = {
+        .interface_name = NULL,
+    };
+    parse_arguments(argc, argv, &peppool_threads, &background, &lst_args, &sch_args, &snf_args);
 
     if (background) {
         PEP_DEBUG("Daemonizing...");
@@ -255,18 +341,21 @@ int main(int argc, char* argv[])
     poll_args.epoll_fd = epoll_fd;
     wrk_args.epoll_fd = epoll_fd;
     sch_args.epoll_fd = epoll_fd;
+    snf_args.epoll_fd = epoll_fd;
 
     block_poller_signal();
     PEP_DEBUG("Initialize PEP queue for active connections...");
     pepqueue_init(&active_queue);
     PEP_DEBUG("Initialize PEP queue for handled connections...");
     pepqueue_init(&ready_queue);
-    serve_forever(peppool_threads, &lst_args, &poll_args, &sch_args, &wrk_args);
+    serve_forever(peppool_threads, &lst_args, &poll_args, &sch_args, &wrk_args, &snf_args);
 
     PEP_DEBUG("exiting...\n");
     sockopt_destroy();
     close(epoll_fd);
+#ifndef DISABLE_SYSLOG
     closelog();
+#endif
 
     return EXIT_SUCCESS;
 }

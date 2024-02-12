@@ -26,8 +26,8 @@ setup_socket(int fd)
 
     flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(struct timeval));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(struct timeval));
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(t));
     PEP_DEBUG("Socket %d: Setting up timeouts and syncronous mode.", fd);
 }
 
@@ -50,10 +50,10 @@ void block_poller_signal(void)
 void* poller_loop(void* arg)
 {
     struct poller_thread_arguments* args = (struct poller_thread_arguments*)arg;
-    int epollret, num_works, i, num_clients, iostat;
+    int epollret, num_works, iostat;
     const unsigned int event_handlers = 2 * get_max_connections();
     struct pep_proxy* proxy;
-    struct pep_endpoint *endp, *target;
+    struct pep_endpoint* endp;
     struct epoll_event *event, events[event_handlers];
     struct list_node *entry, *safe;
     struct list_head local_list;
@@ -87,7 +87,7 @@ void* poller_loop(void* arg)
         }
 
         num_works = 0;
-        for (i = 0; i < epollret; i++) {
+        for (size_t i = 0; i < epollret; ++i) {
             event = &events[i];
             endp = (struct pep_endpoint*)event->data.ptr;
             proxy = (struct pep_proxy*)endp->owner;
@@ -102,7 +102,8 @@ void* poller_loop(void* arg)
 
             switch (proxy->status) {
             case PST_CONNECT: {
-                int ret, connerr, errlen = sizeof(int);
+                int ret, connerr;
+                socklen_t errlen = sizeof(connerr);
 
                 getsockopt(proxy->dst.fd, SOL_SOCKET, SO_ERROR, &connerr, &errlen);
                 if (connerr != 0) {
@@ -145,6 +146,8 @@ void* poller_loop(void* arg)
 
                 break;
             }
+            default:
+                break;
             }
         }
         if (list_is_empty(&local_list)) {
@@ -185,7 +188,7 @@ void* poller_loop(void* arg)
         {
             proxy = list_entry(entry, struct pep_proxy, qnode);
             proxy->enqueued = 0;
-            for (i = 0; i < PROXY_ENDPOINTS; i++) {
+            for (size_t i = 0; i < PROXY_ENDPOINTS; ++i) {
                 endp = &proxy->endpoints[i];
                 iostat = endp->iostat;
                 if ((iostat & PEP_IOERR) || (iostat & PEP_IOEOF)) {

@@ -12,6 +12,8 @@ static char* conn_stat[] = {
     "PST_OPEN",
     "PST_CONNECT",
     "PST_PENDING",
+    "PST_PENDING_IN",
+    "PST_INVAL",
 };
 
 static inline void
@@ -106,7 +108,7 @@ void* timer_sch_loop(void* arg)
                    last_gc_evt_time = { 0U, 0U },
                    now;
 
-    FILE* logger;
+    FILE* logger = NULL;
     if (args->logger_filename) {
         PEP_DEBUG("Setting up PEP logger");
         logger = fopen(args->logger_filename, "w+");

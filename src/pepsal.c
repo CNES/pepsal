@@ -42,7 +42,8 @@ void destroy_proxy(struct pep_proxy* proxy, int epoll_fd)
     int i;
 
     if (proxy->status == PST_CLOSED) {
-        goto out;
+        unpin_proxy(proxy);
+        return;
     }
 
     proxy->status = PST_CLOSED;
@@ -66,8 +67,11 @@ void destroy_proxy(struct pep_proxy* proxy, int epoll_fd)
         close(proxy->endpoints[i].buf.out);
     }
     decrease_connection_count();
+    unpin_proxy(proxy);
+}
 
-out:
+void unpin_proxy(struct pep_proxy* proxy)
+{
     if (atomic_dec(&proxy->refcnt) == 1) {
         PEP_DEBUG_DP(proxy, "Free proxy");
         assert(atomic_read(&proxy->refcnt) == 0);

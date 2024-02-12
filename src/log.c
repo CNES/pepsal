@@ -55,10 +55,9 @@ void __pep_warning(const char* function, int line, const char* fmt, ...)
  * Secure routine to translate a hex address in a
  * readable ip number:
  */
-void toip(char* ret, int address)
+void toip(char* ret, const int address)
 {
     int a, b, c, d;
-
     a = (0xFF000000 & address) >> 24;
     b = (0x00FF0000 & address) >> 16;
     c = (0x0000FF00 & address) >> 8;
@@ -67,9 +66,8 @@ void toip(char* ret, int address)
     snprintf(ret, 16, "%d.%d.%d.%d", a, b, c, d);
 }
 
-void toip6(char* ret, uint16_t addr[8])
+void toip6(char* ret, const uint16_t addr[8])
 {
-
     snprintf(ret,
         IP_ADDR_LEN,
         "%x:%x:%x:%x:%x:%x:%x:%x",
@@ -81,4 +79,17 @@ void toip6(char* ret, uint16_t addr[8])
         addr[5],
         addr[6],
         addr[7]);
+}
+
+void tomac(char* ret, const uint8_t addr[6])
+{
+    snprintf(ret,
+        MAC_ADDR_LEN,
+        "%02x:%02x:%02x:%02x:%02x:%02x",
+        addr[0],
+        addr[1],
+        addr[2],
+        addr[3],
+        addr[4],
+        addr[5]);
 }

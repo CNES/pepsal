@@ -14,8 +14,9 @@ extern int DEBUG;
 
 void __pep_error(const char* function, int line, const char* fmt, ...);
 void __pep_warning(const char* function, int line, const char* fmt, ...);
-void toip(char* ret, int addr);
-void toip6(char* ret, uint16_t addr[8]);
+void tomac(char* ret, const uint8_t ether_host[6]);
+void toip(char* ret, const int addr);
+void toip6(char* ret, const uint16_t addr[8]);
 
 #ifdef DISABLE_SYSLOG
 
@@ -27,6 +28,15 @@ void toip6(char* ret, uint16_t addr[8]);
 #define PEP_DEBUG(fmt, args...)                                           \
     if (DEBUG) {                                                          \
         fprintf(stderr, "[DEBUG] %s(): " fmt "\n", __FUNCTION__, ##args); \
+    }
+
+#define PEP_DEBUG_MAC(mac, fmt, args...)    \
+    if (DEBUG) {                            \
+        char __buf[MAC_ADDR_LEN];           \
+        tomac(__buf, mac);                  \
+        fprintf(stderr,                     \
+            "[DEBUG] %s(): {%s} " fmt "\n", \
+            __FUNCTION__, __buf, ##args);   \
     }
 
 #define PEP_DEBUG_DP(proxy, fmt, args...)      \
@@ -59,6 +69,18 @@ void toip6(char* ret, uint16_t addr[8]);
     if (DEBUG) {                                                          \
         fprintf(stderr, "[DEBUG] %s(): " fmt "\n", __FUNCTION__, ##args); \
         syslog(LOG_DEBUG, "%s(): " fmt, __FUNCTION__, ##args);            \
+    }
+
+#define PEP_DEBUG_MAC(mac, fmt, args...)    \
+    if (DEBUG) {                            \
+        char __buf[MAC_ADDR_LEN];           \
+        tomac(__buf, mac);                  \
+        fprintf(stderr,                     \
+            "[DEBUG] %s(): {%s} " fmt "\n", \
+            __FUNCTION__, __buf, ##args);   \
+        syslog(LOG_DEBUG,                   \
+            "%s(): {%s} " fmt,              \
+            __FUNCTION__, __buf, ##args);   \
     }
 
 #define PEP_DEBUG_DP(proxy, fmt, args...)      \

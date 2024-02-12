@@ -6,6 +6,8 @@ pepsal (2.0.0) focal; urgency=low
   * Adjustable number of worker threads
   * More socket options for intercepted connections
   * Fixed issues with file descriptor when using large values of --conns
+  * Added sniffer thread to parse SYN packets on an interface and open
+    outgoing connections duplicating TOS / Class Field options
   * Added ability to signal when PEPSal is reaching its connections limit
   * Improved dependencies detection during compilation
 
