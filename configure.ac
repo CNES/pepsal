@@ -102,7 +102,7 @@ if test x${enable_dst_in_key} != xno; then
     AC_DEFINE([ENABLE_DST_IN_KEY], 1, "Enable dst in key")
 fi
 
-AC_SUBST(CFLAGS, "$CFLAGS -Wall ${WERROR}")
+AC_SUBST(CFLAGS, "$CFLAGS -Wall -Wno-address-of-packed-member ${WERROR}")
 
 
 AC_CONFIG_FILES(Makefile 

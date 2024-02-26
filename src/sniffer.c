@@ -186,19 +186,29 @@ parse_ip_header(struct iphdr* packet, uint8_t* protocol, struct duplicated_field
     // L3 de-encapsulation
     *protocol = packet->protocol;
     duped->tos = packet->tos;
-    proxy->src.addr32[0] = 0;
-    proxy->src.addr32[1] = 0;
-    proxy->src.addr32[2] = 0xffff;
-    proxy->src.addr32[3] = ntohl(packet->saddr);
-    proxy->dst.addr32[0] = 0;
-    proxy->dst.addr32[1] = 0;
-    proxy->dst.addr32[2] = 0xffff;
-    proxy->dst.addr32[3] = ntohl(packet->daddr);
+    uint32_t saddr = ntohl(packet->saddr);
+    uint32_t daddr = ntohl(packet->daddr);
+    proxy->src.addr[0] = 0;
+    proxy->src.addr[1] = 0;
+    proxy->src.addr[2] = 0;
+    proxy->src.addr[3] = 0;
+    proxy->src.addr[4] = 0;
+    proxy->src.addr[5] = 0xffff;
+    proxy->src.addr[6] = (saddr & 0xffff0000) >> 16;
+    proxy->src.addr[7] = saddr & 0x0000ffff;
+    proxy->dst.addr[0] = 0;
+    proxy->dst.addr[1] = 0;
+    proxy->dst.addr[2] = 0;
+    proxy->dst.addr[3] = 0;
+    proxy->dst.addr[4] = 0;
+    proxy->dst.addr[5] = 0xffff;
+    proxy->dst.addr[6] = (daddr & 0xffff0000) >> 16;
+    proxy->dst.addr[7] = daddr & 0x0000ffff;
 
     if (DEBUG) {
         char src_address[IP_ADDR_LEN], dst_address[IP_ADDR_LEN];
-        toip(src_address, proxy->src.addr32[3]);
-        toip(dst_address, proxy->dst.addr32[3]);
+        toip(src_address, saddr);
+        toip(dst_address, daddr);
         PEP_DEBUG("IP version: %d", packet->version);
         PEP_DEBUG("IP header length: %d", packet->ihl);
         PEP_DEBUG("TOS Field: %u", duped->tos);
@@ -256,10 +266,12 @@ parse_ip6_header(struct ip6_hdr* packet, uint8_t* protocol, struct duplicated_fi
         case 140: // Shim6 Protocol
         case 253: // Use for experimentation and testing
         case 254: // Use for experimentation and testing
+        {
             struct ip6_ext* extension_header = (struct ip6_ext*)((uint8_t*)(packet) + offset);
             *protocol = extension_header->ip6e_nxt;
             offset += 8 * (extension_header->ip6e_len + 1);
             break;
+        }
         default:
             return offset;
         }
@@ -283,7 +295,7 @@ parse_ethernet_header(struct ether_header* packet, uint16_t* ether_type)
     for (;;) {
         switch (*ether_type) {
         case 0x8100:
-        case 0x88A8:
+        case 0x88A8: {
             uint16_t* packet_option = (uint16_t*)(packet + header_offset);
             *ether_type = ntohs(packet_option[1]);
             PEP_DEBUG("VLAN Id: %d", ntohs(packet_option[0]));
@@ -293,6 +305,7 @@ parse_ethernet_header(struct ether_header* packet, uint16_t* ether_type)
             PEP_DEBUG("Real EtherType: 0x%04x", *ether_type);
 #endif
             header_offset += 2 * sizeof(*packet_option);
+        }
         default:
             return header_offset;
         }
@@ -387,6 +400,7 @@ analyse_packet(const struct sockaddr_ll* source, const unsigned char* packet, ss
         destroy_proxy(proxy, epoll_fd);
     } else {
         proxy->dst.fd = out_fd;
+        proxy->status = PST_PENDING_IN;
     }
 }
 

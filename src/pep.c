@@ -191,7 +191,7 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
             break;
 
         switch (c) {
-        case 'h':
+        case 'h': {
             char preamble[1100];
             snprintf(preamble, sizeof(preamble),
                 "%s - A Performance Enhancing Proxy for TCP satellite connections"
@@ -211,6 +211,7 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
                 PACKAGE_STRING, PACKAGE_NAME, PACKAGE_NAME);
             usage(preamble, argv[0], 1);
             break;
+        }
         case 'd':
             *background = 1;
             break;

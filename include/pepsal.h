@@ -13,9 +13,7 @@
 #define __PEPSAL_H
 
 #include "atomic.h"
-#include "congestionlist.h"
 #include "list.h"
-#include "pepdefs.h"
 #include <sys/epoll.h>
 #include <sys/types.h>
 
@@ -49,7 +47,6 @@ struct pep_pipes {
 struct pep_endpoint {
     union {
         uint16_t addr[8];
-        uint32_t addr32[4];
     };
     unsigned short port;
     int fd;

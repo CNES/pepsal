@@ -40,8 +40,7 @@ struct syntab_key {
 #ifdef ENABLE_DST_IN_KEY
     unsigned short dst_port;
 #endif
-    //} __attribute__((packed));
-};
+} __attribute__((packed));
 
 #define GET_SYNTAB() (&syntab)
 

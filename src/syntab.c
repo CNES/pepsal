@@ -22,6 +22,11 @@
 
 struct syn_table syntab;
 
+/* Define type safe functions instead of those using/returning void* */
+static inline DEFINE_HASHTABLE_INSERT(__syntab_insert, struct syntab_key, struct pep_proxy);
+static inline DEFINE_HASHTABLE_SEARCH(__syntab_find, struct syntab_key, struct pep_proxy);
+static inline DEFINE_HASHTABLE_REMOVE(__syntab_remove, struct syntab_key, struct pep_proxy);
+
 /* Bob Jenkin's MIX64 function */
 #define BJ_MIX(a, b, c) \
     do {                \
@@ -132,7 +137,7 @@ void syntab_format_key(struct pep_proxy* proxy, struct syntab_key* key)
 struct pep_proxy*
 syntab_find(struct syntab_key* key)
 {
-    return hashtable_search(syntab.hash, key);
+    return __syntab_find(syntab.hash, key);
 }
 
 int syntab_add(struct pep_proxy* proxy)
@@ -148,7 +153,7 @@ int syntab_add(struct pep_proxy* proxy)
     }
 
     __syntab_format_key(proxy, key);
-    ret = hashtable_insert(syntab.hash, key, proxy);
+    ret = __syntab_insert(syntab.hash, key, proxy);
     if (ret == 0) {
         free(key);
         return -1;
@@ -165,7 +170,7 @@ void syntab_delete(struct pep_proxy* proxy)
     struct syntab_key key;
 
     __syntab_format_key(proxy, &key);
-    hashtable_remove(syntab.hash, &key);
+    __syntab_remove(syntab.hash, &key);
     list_del(&proxy->lnode);
     syntab.num_items--;
 }
@@ -176,7 +181,7 @@ int syntab_add_if_not_duplicate(struct pep_proxy* proxy)
 
     __syntab_format_key(proxy, &key);
     SYNTAB_LOCK_WRITE();
-    struct pep_proxy* dup = hashtable_search(syntab.hash, &key);
+    struct pep_proxy* dup = __syntab_find(syntab.hash, &key);
     if (dup != NULL) {
         PEP_DEBUG_DP(dup, "Duplicate SYN. Dropping...");
         SYNTAB_UNLOCK_WRITE();
