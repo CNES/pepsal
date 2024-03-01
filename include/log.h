@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
-#ifndef DISABLE_SYSLOG
+#ifdef ENABLE_SYSLOG
 #include <syslog.h>
 #endif
 
@@ -18,89 +18,79 @@ void tomac(char* ret, const uint8_t ether_host[6]);
 void toip(char* ret, const int addr);
 void toip6(char* ret, const uint16_t addr[8]);
 
-#ifdef DISABLE_SYSLOG
-
-#define pep_error(fmt, args...) __pep_error(__FUNCTION__, __LINE__, fmt, ##args)
-
-#define pep_warning(fmt, args...) \
-    __pep_warning(__FUNCTION__, __LINE__, fmt, ##args)
-
-#define PEP_DEBUG(fmt, args...)                                           \
-    if (DEBUG) {                                                          \
-        fprintf(stderr, "[DEBUG] %s(): " fmt "\n", __FUNCTION__, ##args); \
-    }
-
-#define PEP_DEBUG_MAC(mac, fmt, args...)    \
-    if (DEBUG) {                            \
-        char __buf[MAC_ADDR_LEN];           \
-        tomac(__buf, mac);                  \
-        fprintf(stderr,                     \
-            "[DEBUG] %s(): {%s} " fmt "\n", \
-            __FUNCTION__, __buf, ##args);   \
-    }
-
-#define PEP_DEBUG_DP(proxy, fmt, args...)      \
-    if (DEBUG) {                               \
-        char __buf[IP_ADDR_LEN];               \
-        toip6(__buf, (proxy)->src.addr);       \
-        fprintf(stderr,                        \
-            "[DEBUG] %s(): {%s:%d} " fmt "\n", \
-            __FUNCTION__,                      \
-            __buf,                             \
-            (proxy)->src.port,                 \
-            ##args);                           \
-    }
+#if defined(ENABLE_SYSLOG) || defined(ENABLE_STDERR)
+#define CHECK_LOGGING(...) \
+    do {                   \
+        if (DEBUG) {       \
+            __VA_ARGS__    \
+        }                  \
+    } while (0)
 #else
+#define CHECK_LOGGING(...)
+#endif
 
-#define pep_error(fmt, args...)        \
-    syslog(LOG_ERR,                    \
-        "%s():%d: " fmt " (errno %d)", \
-        __FUNCTION__,                  \
-        __LINE__,                      \
-        ##args,                        \
-        errno);                        \
+#ifdef ENABLE_SYSLOG
+#define SYSLOG_BEHAVIOUR(...) __VA_ARGS__
+#else
+#define SYSLOG_BEHAVIOUR(...)
+#endif
+
+#ifdef ENABLE_STDERR
+#define STDERR_BEHAVIOUR(...) __VA_ARGS__
+#else
+#define STDERR_BEHAVIOUR(...)
+#endif
+
+#define pep_error(fmt, args...)            \
+    SYSLOG_BEHAVIOUR(                      \
+        syslog(LOG_ERR,                    \
+            "%s():%d: " fmt " (errno %d)", \
+            __FUNCTION__,                  \
+            __LINE__,                      \
+            ##args,                        \
+            errno);                        \
+        closelog();)                       \
     __pep_error(__FUNCTION__, __LINE__, fmt, ##args)
 
-#define pep_warning(fmt, args...)                                         \
-    syslog(LOG_WARNING, "%s():%d: " fmt, __FUNCTION__, __LINE__, ##args); \
+#define pep_warning(fmt, args...)                                              \
+    SYSLOG_BEHAVIOUR(                                                          \
+        syslog(LOG_WARNING, "%s():%d: " fmt, __FUNCTION__, __LINE__, ##args);) \
     __pep_warning(__FUNCTION__, __LINE__, fmt, ##args)
 
-#define PEP_DEBUG(fmt, args...)                                           \
-    if (DEBUG) {                                                          \
-        fprintf(stderr, "[DEBUG] %s(): " fmt "\n", __FUNCTION__, ##args); \
-        syslog(LOG_DEBUG, "%s(): " fmt, __FUNCTION__, ##args);            \
-    }
+#define PEP_DEBUG(fmt, args...)                                     \
+    CHECK_LOGGING(                                                  \
+        SYSLOG_BEHAVIOUR(                                           \
+            syslog(LOG_DEBUG, "%s(): " fmt, __FUNCTION__, ##args);) \
+            STDERR_BEHAVIOUR(                                       \
+                fprintf(stderr, "[DEBUG] %s(): " fmt "\n", __FUNCTION__, ##args);))
 
-#define PEP_DEBUG_MAC(mac, fmt, args...)    \
-    if (DEBUG) {                            \
-        char __buf[MAC_ADDR_LEN];           \
-        tomac(__buf, mac);                  \
-        fprintf(stderr,                     \
-            "[DEBUG] %s(): {%s} " fmt "\n", \
-            __FUNCTION__, __buf, ##args);   \
-        syslog(LOG_DEBUG,                   \
-            "%s(): {%s} " fmt,              \
-            __FUNCTION__, __buf, ##args);   \
-    }
+#define PEP_DEBUG_MAC(mac, fmt, args...)                                                   \
+    CHECK_LOGGING(                                                                         \
+        char __buf[MAC_ADDR_LEN];                                                          \
+        tomac(__buf, mac);                                                                 \
+        STDERR_BEHAVIOUR(                                                                  \
+            fprintf(stderr, "[DEBUG] %s(): {%s} " fmt "\n", __FUNCTION__, __buf, ##args);) \
+            SYSLOG_BEHAVIOUR(                                                              \
+                syslog(LOG_DEBUG, "%s(): {%s} " fmt, __FUNCTION__, __buf, ##args);))
 
-#define PEP_DEBUG_DP(proxy, fmt, args...)      \
-    if (DEBUG) {                               \
-        char __buf[IP_ADDR_LEN];               \
-        toip6(__buf, (proxy)->src.addr);       \
-        fprintf(stderr,                        \
-            "[DEBUG] %s(): {%s:%d} " fmt "\n", \
-            __FUNCTION__,                      \
-            __buf,                             \
-            (proxy)->src.port,                 \
-            ##args);                           \
-        syslog(LOG_DEBUG,                      \
-            "%s(): {%s:%d} " fmt,              \
-            __FUNCTION__,                      \
-            __buf,                             \
-            (proxy)->src.port,                 \
-            ##args);                           \
-    }
-#endif
+#define PEP_DEBUG_DP(proxy, fmt, args...)          \
+    CHECK_LOGGING(                                 \
+        char __buf[IP_ADDR_LEN];                   \
+        toip6(__buf, (proxy)->src.addr);           \
+        STDERR_BEHAVIOUR(                          \
+            fprintf(stderr,                        \
+                "[DEBUG] %s(): {%s:%d} " fmt "\n", \
+                __FUNCTION__,                      \
+                __buf,                             \
+                (proxy)->src.port,                 \
+                ##args);)                          \
+            SYSLOG_BEHAVIOUR(                      \
+                syslog(LOG_DEBUG,                  \
+                    "%s(): {%s:%d} " fmt,          \
+                    __FUNCTION__,                  \
+                    __buf,                         \
+                    (proxy)->src.port,             \
+                    ##args);))
 
 /*
  * Check if errno is related to nonblocking I/O.

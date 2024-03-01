@@ -8,6 +8,7 @@
 
 int DEBUG = 0;
 
+#ifdef ENABLE_STDERR
 void __pep_error(const char* function, int line, const char* fmt, ...)
 {
     va_list ap;
@@ -29,12 +30,14 @@ void __pep_error(const char* function, int line, const char* fmt, ...)
 
     fprintf(stderr, "%s\n         AT: %s:%d\n", buf, function, line);
     va_end(ap);
-#ifndef DISABLE_SYSLOG
-    closelog();
+#else
+void __pep_error(const char*, int, const char*, ...)
+{
 #endif
     exit(EXIT_FAILURE);
 }
 
+#ifdef ENABLE_STDERR
 void __pep_warning(const char* function, int line, const char* fmt, ...)
 {
     va_list ap;
@@ -49,6 +52,10 @@ void __pep_warning(const char* function, int line, const char* fmt, ...)
 
     fprintf(stderr, "%s\n       AT: %s:%d\n", buf, function, line);
     va_end(ap);
+#else
+void __pep_warning(const char*, int, const char*, ...)
+{
+#endif
 }
 
 /*

@@ -77,9 +77,7 @@ usage(const char* preamble, const char* progname, int success)
                     "\n                          them on outgoing sockets"
                     "\n",
         preamble, progname);
-#ifndef DISABLE_SYSLOG
-    closelog();
-#endif
+    SYSLOG_BEHAVIOUR(closelog(););
     if (success) {
         exit(EXIT_SUCCESS);
     } else {
@@ -290,9 +288,7 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
 
 int main(int argc, char* argv[])
 {
-#ifndef DISABLE_SYSLOG
-    openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON);
-#endif
+    SYSLOG_BEHAVIOUR(openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON););
     /*
      * Main queues for connections and work synchronization
      * active_queue is used to transfer read/write jobs to
@@ -354,9 +350,7 @@ int main(int argc, char* argv[])
     PEP_DEBUG("exiting...\n");
     sockopt_destroy();
     close(epoll_fd);
-#ifndef DISABLE_SYSLOG
-    closelog();
-#endif
+    SYSLOG_BEHAVIOUR(closelog(););
 
     return EXIT_SUCCESS;
 }

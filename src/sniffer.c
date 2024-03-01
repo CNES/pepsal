@@ -1,4 +1,5 @@
 #include "sniffer.h"
+#include "config.h"
 #include "listener.h"
 #include "log.h"
 #include "pepdefs.h"
@@ -205,7 +206,7 @@ parse_ip_header(struct iphdr* packet, uint8_t* protocol, struct duplicated_field
     proxy->dst.addr[6] = (daddr & 0xffff0000) >> 16;
     proxy->dst.addr[7] = daddr & 0x0000ffff;
 
-    if (DEBUG) {
+    CHECK_LOGGING(
         char src_address[IP_ADDR_LEN], dst_address[IP_ADDR_LEN];
         toip(src_address, saddr);
         toip(dst_address, daddr);
@@ -214,8 +215,7 @@ parse_ip_header(struct iphdr* packet, uint8_t* protocol, struct duplicated_field
         PEP_DEBUG("TOS Field: %u", duped->tos);
         PEP_DEBUG("Protocol: %u", *protocol);
         PEP_DEBUG("IP src address: %s", src_address);
-        PEP_DEBUG("IP dst address: %s", dst_address);
-    }
+        PEP_DEBUG("IP dst address: %s", dst_address););
 
     // Convert number of 32-bits words into number of bytes
     return packet->ihl * 4;
@@ -232,7 +232,7 @@ parse_ip6_header(struct ip6_hdr* packet, uint8_t* protocol, struct duplicated_fi
         proxy->dst.addr[i] = ntohs(packet->ip6_dst.s6_addr16[i]);
     }
 
-    if (DEBUG) {
+    CHECK_LOGGING(
         char src_address[IP_ADDR_LEN], dst_address[IP_ADDR_LEN];
         toip6(src_address, proxy->src.addr);
         toip6(dst_address, proxy->dst.addr);
@@ -240,8 +240,7 @@ parse_ip6_header(struct ip6_hdr* packet, uint8_t* protocol, struct duplicated_fi
         PEP_DEBUG("Traffic Class: %u", duped->tc);
         PEP_DEBUG("Payload Length: %u", payload_length);
         PEP_DEBUG("IP src address: %s", src_address);
-        PEP_DEBUG("IP dst address: %s", dst_address);
-    }
+        PEP_DEBUG("IP dst address: %s", dst_address););
 
     *protocol = packet->ip6_ctlun.ip6_un1.ip6_un1_nxt;
     size_t offset = sizeof(struct ip6_hdr);

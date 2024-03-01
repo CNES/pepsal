@@ -67,10 +67,15 @@ AC_FUNC_FORK
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([gethostbyname memset socket timer_create timer_settime])
 
-AC_ARG_ENABLE(syslog_removal,
-        AC_HELP_STRING([--enable-syslog-removal], [remove syslog logging: yes|no (default=no)]),
-        [remove_syslog=$enableval],
-        [remove_syslog="no"])
+AC_ARG_ENABLE(syslog,
+        AC_HELP_STRING([--enable-syslog], [enable syslog logging: yes|no (default=no)]),
+        [enable_syslog=$enableval],
+        [enable_syslog="no"])
+
+AC_ARG_ENABLE(stderr_logging,
+        AC_HELP_STRING([--enable-stderr-logging], [enable stderr logging: yes|no (default=no)]),
+        [enable_stderr=$enableval],
+        [enable_stderr="no"])
 
 AC_ARG_ENABLE(dst_in_key,
         AC_HELP_STRING([--enable-dst-in-key], [enable using dst addr:port pair in key : yes|no (default=yes)]),
@@ -94,8 +99,12 @@ if test x${enable_debug} = xno; then
     AC_DEFINE([NDEBUG], 1, "Disable assertions")
 fi
 
-if test x${remove_syslog} != xno; then
-    AC_DEFINE([DISABLE_SYSLOG], 1, "Disable syslog")
+if test x${enable_syslog} != xno; then
+    AC_DEFINE([ENABLE_SYSLOG], 1, "Enable using syslog for logs")
+fi
+
+if test x${enable_stderr} != xno; then
+    AC_DEFINE([ENABLE_STDERR], 1, "Enable using stderr for logs")
 fi
 
 if test x${enable_dst_in_key} != xno; then
