@@ -104,7 +104,8 @@ int syntab_init(int num_conns)
         return -1;
     }
 
-    ret = pthread_rwlock_init(&syntab.lock, NULL);
+    pthread_rwlockattr_t attr;
+    ret = pthread_rwlockattr_init(&attr);
     if (ret) {
         ret = errno;
         hashtable_destroy(syntab.hash, 0);
@@ -112,6 +113,17 @@ int syntab_init(int num_conns)
         return -1;
     }
 
+    ret = pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)
+        || pthread_rwlock_init(&syntab.lock, &attr);
+    if (ret) {
+        ret = errno;
+        hashtable_destroy(syntab.hash, 0);
+        pthread_rwlockattr_destroy(&attr);
+        errno = ret;
+        return -1;
+    }
+
+    pthread_rwlockattr_destroy(&attr);
     list_init_head(&syntab.conns);
     syntab.num_items = 0;
 

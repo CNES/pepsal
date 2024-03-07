@@ -288,7 +288,7 @@ void parse_arguments(int argc, char* argv[], int* thread_count, int* background,
 
 int main(int argc, char* argv[])
 {
-    SYSLOG_BEHAVIOUR(openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON););
+    SYSLOG_BEHAVIOUR(openlog(PROGRAM_NAME, LOG_PID | LOG_NDELAY, LOG_DAEMON););
     /*
      * Main queues for connections and work synchronization
      * active_queue is used to transfer read/write jobs to

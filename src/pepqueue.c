@@ -17,9 +17,18 @@
 int pepqueue_init(struct pep_queue* pq)
 {
     list_init_head(&pq->queue);
-    if (pthread_mutex_init(&pq->mutex, NULL) != 0) {
+
+    pthread_mutexattr_t attr;
+    if (pthread_mutexattr_init(&attr) != 0) {
         return -1;
     }
+    if (pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST) != 0
+        || pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0
+        || pthread_mutex_init(&pq->mutex, &attr) != 0) {
+        pthread_mutexattr_destroy(&attr);
+        return -1;
+    }
+    pthread_mutexattr_destroy(&attr);
     if (pthread_cond_init(&pq->condvar, NULL) != 0) {
         return -1;
     }

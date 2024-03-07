@@ -31,11 +31,15 @@ setup_socket(int fd)
     PEP_DEBUG("Socket %d: Setting up timeouts and syncronous mode.", fd);
 }
 
-/* An empty signal handler. It only needed to interrupt poll() */
+/* An empty signal handler. It is only needed to interrupt poll() */
 static void
-poller_sighandler(int signo)
+poller_sighandler(int)
 {
-    PEP_DEBUG("Received signal %d", signo);
+    /*
+     * Do not use PEP_DEBUG here, as both syslog and fprintf are
+     * AS-unsafe in POSIX implementation.
+     * Calling them within a signal handler invokes undefined behavior.
+     */
 }
 
 void block_poller_signal(void)

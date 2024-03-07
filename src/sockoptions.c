@@ -15,6 +15,7 @@ void sockopt_init(void)
     pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
     pthread_mutex_init(&sockopt_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
 }
 
 int sockopt_is_fastopen(void)
