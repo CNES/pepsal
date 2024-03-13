@@ -23,7 +23,7 @@
 
 struct duplicated_fields {
     uint8_t tos;
-    uint8_t tc;
+    int tc;
 };
 
 #ifndef NDEBUG
@@ -244,9 +244,10 @@ parse_ip6_header(struct ip6_hdr* packet, uint8_t* protocol, struct duplicated_fi
 
     *protocol = packet->ip6_ctlun.ip6_un1.ip6_un1_nxt;
     size_t offset = sizeof(struct ip6_hdr);
+    size_t packet_size = offset + payload_length;
     for (;;) {
         PEP_DEBUG("Next header: 0x%02x", *protocol);
-        if (offset + 8 >= payload_length) {
+        if (offset >= packet_size) {
             // Somehow got past the end of the packet
             // (or this is an IPv6 jumbogram and we don't care)
             *protocol = 0xFF;
