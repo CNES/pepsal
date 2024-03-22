@@ -1,0 +1,16 @@
+flush ruleset
+
+table inet mangle {
+	chain INTERCEPT {
+		meta protocol ip meta l4proto tcp tproxy ip to 127.0.0.1:5000 meta mark set ct mark accept
+		meta protocol ip6 meta l4proto tcp tproxy ip6 to [::1]:5000 meta mark set ct mark accept
+	}
+
+	chain PREROUTING {
+		type filter hook prerouting priority mangle; policy accept;
+		ct mark 0x000000c9 accept
+		ct mark 0x000000c8 jump INTERCEPT
+		iifname "eth0" meta l4proto tcp ct count 2000 ct mark set 0x000000c8 jump INTERCEPT
+		ct mark set 0x000000c9 accept
+	}
+}
