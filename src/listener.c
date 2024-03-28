@@ -1,3 +1,15 @@
+/*
+ * PEPsal : A Performance Enhancing Proxy for Satellite Links
+ *
+ * Copyleft Daniele Lacamera 2005
+ * Copyleft Dan Kruchining <dkruchinin@acm.com> 2010
+ * Copyright CNES 2017
+ * Copyright Thales Alenia Space 2024
+ * See AUTHORS and COPYING before using this software.
+ *
+ */
+
+
 #define _GNU_SOURCE
 #include "listener.h"
 #include "conntrack.h"

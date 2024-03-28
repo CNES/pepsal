@@ -29,7 +29,7 @@ PEPsal can be installed on any number of machines. If it installed on one side o
 
 ### Operating System
 
-PEPsal is distributed in debian packages compatible with Ubuntu versions 14.04 and 16.04.
+PEPsal is distributed in debian packages compatible with Ubuntu.
 
 For any other distribution/version, the source code is available for compilation.
 
@@ -39,55 +39,67 @@ PEPsal is distributed via debian packages, stored in the Net4Sat depository.
 
 To get these packages, add this repository to the APT sources list:
 
-On Ubuntu 16.04 LTS or upper
+On Ubuntu 20.04 LTS or upper
 
-> echo "deb https://raw.githubusercontent.com/CNES/net4sat-packages/master/ focal stable" | sudo tee /etc/apt/sources.list.d/raw_githubusercontent_com_CNES_net4sat_packages_master.list  
+> sudo mkdir /etc/apt/keyrings
+> curl -sS https://raw.githubusercontent.com/CNES/net4sat-packages/master/gpg/net4sat.gpg.key | gpg --dearmor | sudo dd of=/etc/apt/keyrings/net4sat.gpg
+> cat << EOF | sudo tee /etc/apt/sources.list.d/github.net4sat.sources
+Types: deb
+URIs: https://raw.githubusercontent.com/CNES/net4sat-packages/master/focal/
+Suites: focal
+Components: stable
+Signed-By: /etc/apt/keyrings/net4sat.gpg
+EOF
+
+Change focal by jammy if appropriate.
 
 Update the apt cache after adding the new repository, and install the pepsal package:
 
 > sudo apt-get update
 > sudo apt-get install pepsal
 
-After installation, PEPSal should be running in background as a service. 
+After installation, PEPSal should be running in the background as a service.
 
 </details>
 
-# User manual 
+# User manual
 
 <details><summary>Deploy to see how to use PEPSal</summary>
 
-By default, PEPsal will be launched as a service, running the pepsal binary as a daemon.
+By default, PEPsal will be launched as a service, running the pepsal binary as a daemon. The listening socket is bound to every interfaces and opened as an AF_INET6 socket in order to handle both IPv4 and IPv6 incoming connexions. You can also stop the service and run the binary manually if desired.
 
 ## Parameters
 
 PEPsal binary can be run with the following optional parameters:
 - *-d* (daemon): run the binary in the background.
-- *-v* (verbose): allow debug logs.
+- *-v* (verbose): enable printing debug statements.
 - *-h* (help): print the usage, and exit.
-- *-f* (fastopen): enable using TCP FastOpen with the PEP sockets (must also be enabled at OS level).
-- *-p* (port): the PEP listening port (by default, *5000*).
 - *-V* (version): print version, and exit.
-- *-a* (ip_address): address to bind the listening port (by default, *0.0.0.0*, all the interfaces).
-- *-l* (log_file): file to log the active connections periodically.
-- *-g* (gc_interval): connections garbage collector that removes no longer entries from hash tables. (by default, 15 hours)
-- *-t* (pending_lifetime): maximum lifetime for a pending connection. Past this time, it will be considered garbage. (by default, 5 hours)
+- *-p* (port): the PEP listening port (by default, *5000*).
 - *-c* (max_conns): maximum number of connections allowed (by default, 2112).
+- *-l* (logfile): file to log periodic dumps of the syn table.
+- *-g* (gc_interval): connections garbage collector that removes no longer active entries from hash tables every gc_interval seconds. (by default, 15 hours).
+- *-t* (pending_lifetime): maximum lifetime of a stale connection before being garbage collected. (by default, 5 hours).
+- *-T* (threads): amount of worker threads to use.
+- *-f* (fastopen): enable using TCP FastOpen on listening and outgoing sockets (must also be enabled at OS level).
+- *-n* (nodelay): enable TCP no delay option on outgoing sockets.
+- *-q* (quickack): enable TCP quick ACK option on outgoing sockets.
+- *-k* (cork): enable TCP CORK option on outgoing sockets.
+- *-C* (algorithm): name of the TCP congestion control algorithm to use on outgoing sockets.
+- *-m* (mss): enable the TCP maximum segment size option on outgoing sockets and set it to mss bytes.
+- *-M* (monitoring_pid): enable alert on process id PID when reaching close to max_conns opened connections (SIGUSR1 will be sent when reaching 99% of opened connections and SIGUSR2 when capacity drops back to 95%).
+- *-s*: (interface): name of interface to sniff and extract ethernet or IP options from SYN packets in order to replicate them on outgoing sockets.
 
-In order to configure these parameters for the PEPsal service, the file */etc/pepsal/pepsal.conf* must be modified, and the service restarted. This file contains variables for all the parameters already described.
 
-## Iptables
+When launching PEPSal manually, provide the relevant parameters on the command-line. When running PEPSal as a service, the recommended approach is to use a [drop-in configuration file](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html#id-1.14.3) to override the necessary environment variables, or rewrite the `ExecStart` command if you deem it necessary. An example drop-in file is available in the `conf` directory as `conf/pepsal.conf`. Make sure to let systemd know of your changes by issuing the `systemctl daemon-reload` command.
 
-Besides from running the binary, the traffic to optimize must be redirected to the PEPsal interface. This redirection is done by netfilter, and can be configured by using the tool iptables.
+## Network Configuration
 
-The target to use to redirect traffic to PEPsal is *TPROXY*, which can be used only in the *PREROUTING* chain (that treats packets before being routed) of the mangle table. This target receives two parameters: the port to which redirect the traffic (the port of PEPsal), and a mark to set to the packets. This mark will be used to route the packets.
+### Routing packets to PEPSal
 
-As filter, any rule can be used: incoming interface, source address and/or port, destination address and/or port. In any case, since only TCP traffic is optimized, it is recommended to specify it to avoid unnecessary processing.
+Besides from running the binary, the traffic to optimize must be redirected to the PEPsal interface. This redirection is done by netfilter, and must be supplemented by the use of the `ip rule` and `ip route` commands.
 
-For example, to filter all incoming traffic on the interface *eth0*, the command to add this rule is:
-
-> iptables -A PREROUTING -t mangle -p tcp -i eth0 -j TPROXY --on-port 5000 --tproxy-mark 1
-
-To effectively direct these packets to PEPsal, they have to be routed to the local lo interface. A default route can be added for packets with a fwmark, so that the routing of other packets is not disturbed. To instruct the kernel to use a particular routing table (not the default) for marked packets, run the following command:
+To effectively direct these packets to PEPsal, they have to be routed to the local lo interface. Netfilter allows to put a specific fwmark on a connection, then a default route must be specified for packets with that specific fwmark, so that the routing of other packets is not disturbed. To instruct the kernel to use a particular routing table (not the default) for marked packets, run the following command:
 
 > ip rule add fwmark 1 lookup 100
 
@@ -95,9 +107,114 @@ This commands tells the kernel to use the routing table number 100, when routing
 
 Finally, a default route must be added to this new table, telling the kernel to route all packets to the loopback interface:
 
-> ip route add local 0.0.0.0/0 dev lo table 100
+> ip route add local default dev lo table 100
 
-These two commands must be configured only one time, since they are valable for all PEPsal traffic. On the other hand, any number of iptables rules can be added, to filter any type of traffic. 
+These two commands must be configured only one time, since they are valid for all PEPsal traffic.
+
+### Using iptables to Set a Fwmark
+
+The target to use to redirect traffic to PEPsal is *TPROXY*, which can be used only in the *PREROUTING* chain (that treats packets before being routed) of the mangle table. This target receives two parameters: the port to which redirect the traffic (the port of PEPsal), and a mark to set to the packets.  Make sure to match the value of the mark in the iptables rule to the value used in the `ip rule` command shown above.
+
+As filter, any rule can be used: incoming interface, source address and/or port, destination address and/or port. In any case, since only TCP traffic is optimized, it is recommended to specify it to avoid unnecessary processing.
+
+For example, to filter all incoming traffic on the interface *eth0*, the command to add this rule is:
+
+> iptables -A PREROUTING -t mangle -p tcp -i eth0 -j TPROXY --on-port 5000 --tproxy-mark 1
+
+Any number of iptables rules can be added, to filter any type of traffic.
+
+### Using nftables to Set a Fwmark
+
+Similarly to iptables, nftables has a *tproxy* action that allows redirecting traffic to another port on the local machine. This action must be coupled with a *meta mark set* action to replicate the `--tproxy-mark` option of iptables.
+
+The easiest way to setup the rules is to have a dedicated chain executing the
+*tproxy* action and filter incomming packets to redirect them to this chain.
+Using conntrack's `ct` actions also enables tracking of which connections went
+into PEPSal and which didn't so it's possible to avoid a RST in case
+connections limits are to be implemented.
+
+An example configuration file for nftables could look like:
+
+> flush ruleset
+>
+> table inet mangle {
+>   chain INTERCEPT {
+>     meta protocol ip meta l4proto tcp tproxy ip to 127.0.0.1:5000 meta mark set ct mark accept
+>   }
+>
+>   chain COUNT {
+>     ct count 2000 ct mark set 1 jump INTERCEPT
+>     return
+>   }
+>
+>   chain PREROUTING {
+>     type filter hook prerouting priority mangle; policy accept;
+>     ct mark 123 accept
+>     ct mark 1 jump INTERCEPT
+>     iifname "eth0" meta l4proto tcp jump COUNT
+>     ct mark set 123 accept
+>   }
+> }
+
+The *COUNT* chain is optional and can be skipped by using
+
+> iifname "eth0" meta l4proto tcp ct mark set 1 jump INTERCEPT
+
+as the main filtering rule instead.
+
+### Exemple of IPV6 configuration
+
+By default PEPSal listens on all interfaces using an *AF_INET6* socket to accept both IPv4 and IPv6 incomming connections.
+
+In order to redirect IPv6 traffic to PEPSal, it is necessary to mimic the steps used to configure IPv4 traffic forwarding.
+
+The `ip rule` and `ip route` commands need to be run in IPv6 mode as well:
+
+> ip -6 rule add fwmark 1 lookup 100
+> ip -6 route add local default dev lo table 100
+
+And the netfilter rules need to adapted for IPv6 traffic as well.
+
+When using iptables, add the following rule, on the same template as the IPv4 one:
+
+> ip6tables -A PREROUTING -t mangle -p tcp -i eth0 -j TPROXY --on-port 5000 --tproxy-mark 1
+
+When using nftables, add the following rule to the *INTERCEPT* chain:
+
+> meta protocol ip6 meta l4proto tcp tproxy ip6 to [::1]:5000 meta mark set ct mark accept
+
+All other filtering rules leading to the *INTERCEPT* chain will automatically handle IPv6 traffic as well.
+
+### Configuration example for IP options duplication
+
+In order for PEPSal to replicate some TCP or IP header options, a dummy interface needs to be created to intercept SYN packets and extract relevant information before forwarding them to the outgoing socket generated by PEPSal.
+
+For example, to duplicate IP TOS field through PEPSal, on the machine running pepsal a dummy interface is created and assign a sniffing ip address:
+
+> ip link add pepsalsniffer type dummy
+> ip addr add 10.10.42.1/24 dev pepsalsniffer
+> ip link set pepsalsniffer up
+
+In addition to creating the dummy interface, SYN packets must be intercepted by this interface before being directed to PEPSal. By utilizing IPtables, the following commands can be executed to implement these rules:
+
+> iptables -t mangle -A PREROUTING -p tcp -i eth0 -m state --state NEW -j TEE --gateway 10.10.42.42
+> iptables -t mangle -A PREROUTING -p tcp -i eth0 -j TPROXY --on-port 5000 --tproxy-mark 1
+
+The first command duplicates every SYN packet and tries to route it to the designated gateway IP address. Since this address can be routed through the dummy interface, the duplicated SYN packet is handed to this interface and PEPSal will be able to sniff it and extract relevant options from the headers.
+
+Since the *TEE* action is not final, the packet subsequently proceeds to the second rule to be redirected to PEPSal.
+
+When using nftables, adding the following rule at the top of the *INTERCEPT*
+chain is enough:
+
+> ct state new dup to 10.10.42.42 device pepsalsniffer
+
+This rule will filter out established connections, leaving only the SYN packets to be duplicated into the *pepsalsniffer* interface.
+
+Before starting PEPSal service, the dummy interface needs to be specified as a parameter for the service. This can be accomplished as follows:
+
+> echo "Environment="'"'"interface=pepsalsniffer"'"' >> /etc/systemd/system/pepsal.service.d/pepsal.conf
+> systemctl daemon-reload
 
 </details>
 
@@ -147,7 +264,7 @@ OpenBACH can be used to orchestrate PEPSal.
 
 It provides running code and specific examples through the exploitation of *executors*.
 
-Please refer to OpenBACH repository for more information. 
+Please refer to OpenBACH repository for more information.
 
 </details>
 
@@ -161,7 +278,7 @@ Please refer to OpenBACH repository for more information.
 
 Incoming packets are usually handled by the kernel, and are not accessible to the user to modify. In Linux, it is possible to configure the behaviour of the packets (e.g. routing) using the framework Netfilter. Netfilter offers various tools for packet filtering, network address translation (NAT), and port translation. It also offers mechanisms for passing packets to a queue accessible from the userspace, and then returning these packets back to the kernel.
 
-PEPsal uses netfilter in order to capture SYN segments traversing the system (e.g. being routed, but not to the host) that are establishing a new connection. The rules to perform this action are set using iptables, and are placed in the mangle table, PREROUTING chain (before the packets are routed), and the target used is a TPROXY (Transparent Proxy). The target TPROXY works as the following: the system searchs for a socket with the same destination pair (IP address and port) on the local machine. If a socket is found, that means that a transparent proxy is already established, and thus, redirects this packet to said socket. In the other hand, if no socket is found (meaning no connection was established, and that, probably, the segment is a SYN), netfilter redirects the packet to a local port, where a socket is listening for incoming connections. In this case, this port is that of PEPsal, which is listening for new connections. At such event, PEPsal 1) accepts the connection, “impersonating” the remote host, and 2), creates a new socket, bound to the original source address and port, and establishes a connection with the original destination host, splitting the TCP connection in two. All subsequent traffic corresponding to any of these two connections is affected by the same rule in iptables, and will be redirected to the corresponding sockets (since now, netfilter will be able to find one with the same destination address and port).
+PEPsal uses netfilter in order to capture SYN segments traversing the system (e.g. being routed, but not to the host) that are establishing a new connection. The rules to perform this action are set using iptables, and are placed in the mangle table, PREROUTING chain (before the packets are routed), and the target used is a TPROXY (Transparent Proxy). The target TPROXY works as the following: the system searchs for a socket with the same destination pair (IP address and port) on the local machine. If a socket is found, that means that a transparent proxy is already established, and thus, redirects this packet to that socket. In the other hand, if no socket is found (meaning no connection was established, and that, probably, the segment is a SYN), netfilter redirects the packet to a local port, where a socket is listening for incoming connections. In this case, this port is that of PEPsal, which is listening for new connections. At such event, PEPsal 1) accepts the connection, “impersonating” the remote host, and 2), creates a new socket, bound to the original source address and port, and establishes a connection with the original destination host, splitting the TCP connection in two. All subsequent traffic corresponding to any of these two connections is affected by the same rule in iptables, and will be redirected to the corresponding sockets (since now, netfilter will be able to find one with the same destination address and port).
 
 Besides the iptables rule, in order to locally route the packets to the PEP socket, a mark is used on all packets that match the rules added. Since the packets must not exit the machine, but be redirected to the local sockets, they must be routed to the loopback interface. In order to not interfere with the routing of all the other packets not affected by PEPsal, a different routing table than the default one is used for marked packets. Thus, the mark added by the TPROXY target (with the --tproxy-mark option) is assigned to an specific routing table. The default route for this table routes all packets to the loopback interface (refer to this section for the commands).
 
@@ -195,20 +312,20 @@ By default, the garbage connections collector is called every 15 hours, and its 
 
 # Authors and contributors
 
-Idea and Design	: 
-- Carlo Caini <ccaini@deis.unibo.it>, 
-- Rosario Firrincieli <rfirrincieli@arces.unibo.it>  
+Idea and Design	:
+- Carlo Caini <ccaini@deis.unibo.it>,
+- Rosario Firrincieli <rfirrincieli@arces.unibo.it>
 - Daniele Lacamera <root@danielinux.net>
 
-Author		: 
+Author		:
 - Daniele Lacamera <root@danielinux.net>
 
-Co-Author	: 
+Co-Author	:
 - Sergio Ammirata <sergio.ammirata@wialan.com>
 
-CNES has proposed to maintain and make some evolutions for the satellite community alongside OpenSAND and OpenBACH, in a complementary way. 
+CNES has proposed to maintain and make some evolutions for the satellite community alongside OpenSAND and OpenBACH, in a complementary way.
 
-# License 
+# License
 
 Please Refer to [COPYING](https://gitlab.cnes.fr/openbach/pepsal/-/blob/master/COPYING) for more information on the license.
 

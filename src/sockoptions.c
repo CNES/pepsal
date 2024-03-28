@@ -1,3 +1,12 @@
+/*
+ * PEPsal : A Performance Enhancing Proxy for Satellite Links
+ *
+ * Copyright Thales Alenia Space 2024
+ * See AUTHORS and COPYING before using this software.
+ *
+ */
+
+
 #include "sockoptions.h"
 #include <pthread.h>
 #include <stdlib.h>

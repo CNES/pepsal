@@ -2,9 +2,8 @@
  * PEPsal : A Performance Enhancing Proxy for Satellite Links
  *
  * Copyleft Dan Kruchinin <dkruchinin@acm.org> 2010
+ * Copyright Thales Alenia Space 2024
  * See AUTHORS and COPYING before using this software.
- *
- *
  *
  */
 
@@ -56,13 +55,11 @@ pepqueue_dequeue(struct pep_queue* pq)
 {
     struct pep_proxy* proxy = NULL;
 
-    if (pq->num_items == 0) {
-        return NULL;
+    if (pq->num_items != 0) {
+        proxy = list_entry(list_node_first(&pq->queue), struct pep_proxy, qnode);
+        list_del(&proxy->qnode);
+        pq->num_items--;
     }
-
-    proxy = list_entry(list_node_first(&pq->queue), struct pep_proxy, qnode);
-    list_del(&proxy->qnode);
-    pq->num_items--;
 
     return proxy;
 }

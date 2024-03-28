@@ -1,3 +1,15 @@
+/*
+ * PEPsal : A Performance Enhancing Proxy for Satellite Links
+ *
+ * Copyleft Daniele Lacamera 2005
+ * Copyleft Dan Kruchining <dkruchinin@acm.com> 2010
+ * Copyright CNES 2017
+ * Copyright Thales Alenia Space 2024
+ * See AUTHORS and COPYING before using this software.
+ *
+ */
+
+
 #include "pepsal.h"
 #include "conntrack.h"
 #include "log.h"
@@ -11,9 +23,9 @@
 
 struct pep_proxy* alloc_proxy(void)
 {
-    struct pep_proxy* proxy = calloc(1, sizeof(*proxy));
     int i;
     struct pep_endpoint* endp;
+    struct pep_proxy* proxy = calloc(1, sizeof(*proxy));
 
     if (!proxy) {
         errno = ENOMEM;

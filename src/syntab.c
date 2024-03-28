@@ -5,9 +5,8 @@
  * Copyright CNES 2017
  * See AUTHORS and COPYING before using this software.
  *
- *
- *
  */
+
 
 #include "syntab.h"
 #include "config.h"

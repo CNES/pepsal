@@ -1,16 +1,28 @@
+2.0.0: File-descriptors hitting limits bugfix, rewritten most of the code,
+improved dependencies detection with autotools. Added IPv6 support, adjustable
+number of worker threads, more TCP socket options for outgoing sockets. Using
+zero-copy for packets going through PEPSal, added an optional sniffer thread
+to parse SYN packets on a network interface and added the ability to signal an
+other process when PEPSal is reaching its connections limit.
+
+1.9.1: Removed useless bind on proxy local socket.
+
 1.9.0: Added support for TCP FastOpen and TPROXY iptables target. Added debian
 packaging.
 
-1.2.2 : Added -a option to bind to a single address, memory leak bugfix (all thanks to Wojtek Sawasciuk)
+1.2.2 : Added -a option to bind to a single address, memory leak bugfix (all
+thanks to Wojtek Sawasciuk).
 
-1.2.1 : small bugfix: netfilter_queue libraries unbind function return value discarded
+1.2.1 : small bugfix: netfilter_queue libraries unbind function return value
+discarded.
 
 1.2.0 : Fixed instability in http connections. Added timeout for sleeping
-sockets. Two separate poll for reading/writing
+sockets. Two separate poll for reading/writing.
 
 1.0.2 : Added socket timeout options for non-blocking sockets.
 
 1.0.1 : Double initial bind for TCP socket. New POSIX signal management
 support.
 
-1.0.0 : Several bugfixes, rewritten most of the code, removed obsolete ip_queue interface, autotools added
+1.0.0 : Several bugfixes, rewritten most of the code, removed obsolete
+ip_queue interface, autotools added.

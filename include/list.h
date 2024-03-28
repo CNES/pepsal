@@ -17,6 +17,7 @@
  * (c) Copyright 2008 Dan Kruchinin <dkruchinin@acm.org>
  */
 
+
 #ifndef __LIST_H__
 #define __LIST_H__
 
@@ -25,7 +26,7 @@
 
 /**
  * @struct list_node
- * @brief List node
+ * @brief Node in a linked-list structure
  */
 struct list_node {
     struct list_node* next;

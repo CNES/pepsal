@@ -12,7 +12,7 @@ pepsal (2.0.0) focal; urgency=low
   * Added ability to signal when PEPSal is reaching its connections limit
   * Improved dependencies detection during compilation
 
- -- PEPSal Maintainers <admin@pepsal.org>  Mon, 29 Jan 2024 11:41:27 +0200
+ -- PEPSal Maintainers <admin@pepsal.org>  Fri, 05 Apr 2024 11:53:13 +0200
 
 pepsal (1.9.1) trusty; urgency=low
 

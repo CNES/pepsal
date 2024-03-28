@@ -4,11 +4,11 @@
  * Copyleft Daniele Lacamera 2005
  * Copyleft Dan Kruchining <dkruchinin@acm.com> 2010
  * Copyright CNES 2017
+ * Copyright Thales Alenia Space 2024
  * See AUTHORS and COPYING before using this software.
  *
- *
- *
  */
+
 
 #include "conntrack.h"
 #include "listener.h"
