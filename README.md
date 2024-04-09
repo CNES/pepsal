@@ -19,7 +19,7 @@ It is designed to follow the advices in [IETF RFC3135](https://datatracker.ietf.
 
 # Installation manual
 
-<details><summary>Deploy to see how to install PEPSal</summary>
+<details><summary>Deploy to see how to install PEPsal</summary>
 
 ## Requirements
 
@@ -31,7 +31,7 @@ PEPsal can be installed on any number of machines. If it installed on one side o
 
 PEPsal is distributed in debian packages compatible with Ubuntu.
 
-For any other distribution/version, the source code is available for compilation.
+For any other distribution/version, the source code is available for [compilation](#pepsal-compilation).
 
 ## PEPsal installation
 
@@ -58,13 +58,41 @@ Update the apt cache after adding the new repository, and install the pepsal pac
 > sudo apt-get update
 > sudo apt-get install pepsal
 
-After installation, PEPSal should be running in the background as a service.
+After installation, PEPsal should be running in the background as a service.
+
+## PEPsal compilation
+
+PEPsal is configured to be built through the use of [autotools](https://www.gnu.org/software/automake/manual/html_node/Autotools-Introduction.html). The barebone instructions required to start building PEPsal are coalesced into the `autogen.sh` executable file; so it is usually sufficient to run:
+
+> ./autogen.sh
+> make
+
+In order to build the `pepsal` binary into the `src` directory. Optionally, installing PEPsal system-wide can be done with:
+
+> sudo make install
+
+But the purpose of the `autogen.sh` script is to build and run the `configure` script that will ultimately generate the necessary Makefiles needed to build PEPsal. The `configure` script is responsible to parametrize various compilation and installation options. Among them you'll find the following complite-time switches adding features into PEPsal:
+
+- *--enable-dst-in-key*: use both source *and* destination IP and port as the hashtable key instead of only the source ones. Makes for more reliable proxy finds but doubles key storage.
+- *--enable-syslog*: link against syslog to be used as a log output mecanism.
+- *--enable-stderr-logging*: use stderr as a log output mecanism.
+
+Note that no using *--enable-syslog* not *--enable-stderr-logging* will completely disable logging from PEPsal and the *-v* command-line parameter will thus have no observable effect.
+
+To select these options, simply pass them to the `configure` script:
+
+> ./autogen.sh
+> ./configure CFLAGS="-O3 -g0" --prefix=/usr/lib/ --enable-dst-in-key --enable-stderr-logging
+
+Note that the `autogen.sh` script pass all its parameters to the `configure` script once built. So the above example can be shortened to:
+
+> ./autogen.sh CFLAGS="-O3 -g0" --prefix=/usr/lib/ --enable-dst-in-key --enable-stderr-logging
 
 </details>
 
 # User manual
 
-<details><summary>Deploy to see how to use PEPSal</summary>
+<details><summary>Deploy to see how to use PEPsal</summary>
 
 By default, PEPsal will be launched as a service, running the pepsal binary as a daemon. The listening socket is bound to every interfaces and opened as an AF_INET6 socket in order to handle both IPv4 and IPv6 incoming connexions. You can also stop the service and run the binary manually if desired.
 
@@ -91,11 +119,11 @@ PEPsal binary can be run with the following optional parameters:
 - *-s*: (interface): name of interface to sniff and extract ethernet or IP options from SYN packets in order to replicate them on outgoing sockets.
 
 
-When launching PEPSal manually, provide the relevant parameters on the command-line. When running PEPSal as a service, the recommended approach is to use a [drop-in configuration file](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html#id-1.14.3) to override the necessary environment variables, or rewrite the `ExecStart` command if you deem it necessary. An example drop-in file is available in the `conf` directory as `conf/pepsal.conf`. Make sure to let systemd know of your changes by issuing the `systemctl daemon-reload` command.
+When launching PEPsal manually, provide the relevant parameters on the command-line. When running PEPsal as a service, the recommended approach is to use a [drop-in configuration file](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html#id-1.14.3) to override the necessary environment variables, or rewrite the `ExecStart` command if you deem it necessary. An example drop-in file is available in the `conf` directory as `conf/pepsal.conf`. Make sure to let systemd know of your changes by issuing the `systemctl daemon-reload` command.
 
 ## Network Configuration
 
-### Routing packets to PEPSal
+### Routing packets to PEPsal
 
 Besides from running the binary, the traffic to optimize must be redirected to the PEPsal interface. This redirection is done by netfilter, and must be supplemented by the use of the `ip rule` and `ip route` commands.
 
@@ -130,7 +158,7 @@ Similarly to iptables, nftables has a *tproxy* action that allows redirecting tr
 The easiest way to setup the rules is to have a dedicated chain executing the
 *tproxy* action and filter incomming packets to redirect them to this chain.
 Using conntrack's `ct` actions also enables tracking of which connections went
-into PEPSal and which didn't so it's possible to avoid a RST in case
+into PEPsal and which didn't so it's possible to avoid a RST in case
 connections limits are to be implemented.
 
 An example configuration file for nftables could look like:
@@ -164,9 +192,9 @@ as the main filtering rule instead.
 
 ### Exemple of IPV6 configuration
 
-By default PEPSal listens on all interfaces using an *AF_INET6* socket to accept both IPv4 and IPv6 incomming connections.
+By default PEPsal listens on all interfaces using an *AF_INET6* socket to accept both IPv4 and IPv6 incomming connections.
 
-In order to redirect IPv6 traffic to PEPSal, it is necessary to mimic the steps used to configure IPv4 traffic forwarding.
+In order to redirect IPv6 traffic to PEPsal, it is necessary to mimic the steps used to configure IPv4 traffic forwarding.
 
 The `ip rule` and `ip route` commands need to be run in IPv6 mode as well:
 
@@ -187,22 +215,22 @@ All other filtering rules leading to the *INTERCEPT* chain will automatically ha
 
 ### Configuration example for IP options duplication
 
-In order for PEPSal to replicate some TCP or IP header options, a dummy interface needs to be created to intercept SYN packets and extract relevant information before forwarding them to the outgoing socket generated by PEPSal.
+In order for PEPsal to replicate some TCP or IP header options, a dummy interface needs to be created to intercept SYN packets and extract relevant information before forwarding them to the outgoing socket generated by PEPsal.
 
-For example, to duplicate IP TOS field through PEPSal, on the machine running pepsal a dummy interface is created and assign a sniffing ip address:
+For example, to duplicate IP TOS field through PEPsal, on the machine running pepsal a dummy interface is created and assign a sniffing ip address:
 
 > ip link add pepsalsniffer type dummy
 > ip addr add 10.10.42.1/24 dev pepsalsniffer
 > ip link set pepsalsniffer up
 
-In addition to creating the dummy interface, SYN packets must be intercepted by this interface before being directed to PEPSal. By utilizing IPtables, the following commands can be executed to implement these rules:
+In addition to creating the dummy interface, SYN packets must be intercepted by this interface before being directed to PEPsal. By utilizing IPtables, the following commands can be executed to implement these rules:
 
 > iptables -t mangle -A PREROUTING -p tcp -i eth0 -m state --state NEW -j TEE --gateway 10.10.42.42
 > iptables -t mangle -A PREROUTING -p tcp -i eth0 -j TPROXY --on-port 5000 --tproxy-mark 1
 
-The first command duplicates every SYN packet and tries to route it to the designated gateway IP address. Since this address can be routed through the dummy interface, the duplicated SYN packet is handed to this interface and PEPSal will be able to sniff it and extract relevant options from the headers.
+The first command duplicates every SYN packet and tries to route it to the designated gateway IP address. Since this address can be routed through the dummy interface, the duplicated SYN packet is handed to this interface and PEPsal will be able to sniff it and extract relevant options from the headers.
 
-Since the *TEE* action is not final, the packet subsequently proceeds to the second rule to be redirected to PEPSal.
+Since the *TEE* action is not final, the packet subsequently proceeds to the second rule to be redirected to PEPsal.
 
 When using nftables, adding the following rule at the top of the *INTERCEPT*
 chain is enough:
@@ -211,7 +239,7 @@ chain is enough:
 
 This rule will filter out established connections, leaving only the SYN packets to be duplicated into the *pepsalsniffer* interface.
 
-Before starting PEPSal service, the dummy interface needs to be specified as a parameter for the service. This can be accomplished as follows:
+Before starting PEPsal service, the dummy interface needs to be specified as a parameter for the service. This can be accomplished as follows:
 
 > echo "Environment="'"'"interface=pepsalsniffer"'"' >> /etc/systemd/system/pepsal.service.d/pepsal.conf
 > systemctl daemon-reload
@@ -222,9 +250,9 @@ Before starting PEPSal service, the dummy interface needs to be specified as a p
 
 ## OpenSAND
 
-<details><summary>Deploy to see how to use PEPSal alongside OpenSAND</summary>
+<details><summary>Deploy to see how to use PEPsal alongside OpenSAND</summary>
 
-Using PEPSal alongside OpenSAND requires no specific configuration in order to work. This page shows an example of a typical use-case.
+Using PEPsal alongside OpenSAND requires no specific configuration in order to work. This page shows an example of a typical use-case.
 
 The image below depicts the architecture used.
 
@@ -232,15 +260,15 @@ The image below depicts the architecture used.
 
 OpenSAND is installed on three machines, ST, GW and SAT. These machines are linked by the OpenSAND emulation network; when the emulation is running (on IP mode), the GW and ST are linked via a tunnel, through the interface *opensand_tun* on each of these machines. Two workstations are connected to the LAN networks of the ST and GW, and act as client and server, respectively.
 
-In order to accelerate the traffic that passes through the OpenSAND tunnel, PEPSal must be installed on the ST and on the GW.
+In order to accelerate the traffic that passes through the OpenSAND tunnel, PEPsal must be installed on the ST and on the GW.
 
-To capture the traffic that passes between the ST and the GW, then all the traffic that enters via *opensand_tun* and the LAN interface must be redirected toward PEPSal on each machine. The rules to add on each of the GWs and STs:
+To capture the traffic that passes between the ST and the GW, then all the traffic that enters via *opensand_tun* and the LAN interface must be redirected toward PEPsal on each machine. The rules to add on each of the GWs and STs:
 
 > iptables -A PREROUTING -t mangle -p tcp -i opensand_tun -j TPROXY --on-port 5000 --tproxy-mark 1
 
 > iptables -A PREROUTING -t mangle -p tcp -i lan_interface -j TPROXY --on-port 5000 --tproxy-mark 1
 
-where lan_interface must be replaced by the real name of the OpenSAND LAN interface on the machine. In order to route the packets to the local PEPSal socket, the following commands must also be executed:
+where lan_interface must be replaced by the real name of the OpenSAND LAN interface on the machine. In order to route the packets to the local PEPsal socket, the following commands must also be executed:
 
 > ip rule add fwmark 1 lookup 100
 
@@ -258,9 +286,9 @@ where X.X.X.X/X must be replaced by the ST LAN network address (for example, 192
 
 ## OpenBACH
 
-<details><summary>Deploy to see how to orchestrate PEPSal with OpenBACH</summary>
+<details><summary>Deploy to see how to orchestrate PEPsal with OpenBACH</summary>
 
-OpenBACH can be used to orchestrate PEPSal.
+OpenBACH can be used to orchestrate PEPsal.
 
 It provides running code and specific examples through the exploitation of *executors*.
 
@@ -270,9 +298,9 @@ Please refer to OpenBACH repository for more information.
 
 # Design document
 
-<details><summary>Deploy to see PEPSal design document</summary>
+<details><summary>Deploy to see PEPsal design document</summary>
 
-![PEPSal architecture](pepsal_archi.png)
+![PEPsal architecture](pepsal_archi.png)
 
 ## Network level
 
@@ -290,17 +318,17 @@ PEPsal contains several threads to perform the different tasks in parallel. Thes
 
 ### Listener thread
 
-The listener thread is in charge of intercepting the SYN segments trying to start new connection that arrive to the listener socket (by default, bound to the port 5000 on all interfaces). First, the listener socket is opened, and then an infinite loop is entered, waiting for incoming connection requests on this socket. Once a connection request is intercepted (redirected by the TPROXY target that was unable to find a matching socket), the connection is accepted on behalf of the remote host, and a new socket is created, bound to the original source address. Immediately after, a new socket with the original source address is created, and a connection is established with the original destination. A signal is sent to the poller thread, for it to watch the events that are triggered on them. The work of the listener ends here, since all subsequent packets pertaining to these connections will not be redirected the listener port.
+The listener thread is in charge of intercepting the SYN segments trying to start new connection that arrive to the listener socket (by default, bound to the port 5000 on all interfaces). First, the listener socket is opened, and then an infinite loop is entered, waiting for incoming connection requests on this socket. Once a connection request is intercepted (redirected by the TPROXY target that was unable to find a matching socket), the connection is accepted on behalf of the remote host, and a new socket is created, bound to the original source address. Immediately after, a new socket with the original source address is created, and a connection is established with the original destination. A signal is sent to the poller thread, for it to watch the events that are triggered on them. The work of the listener ends here, since all subsequent packets pertaining to these connections will not be redirected to the listener port.
 
 ### Poller thread
 
-The poller thread works with the sockets that the listener has created (both endpoints). This thread contains a list of threads that are periodically polled, looking for events that may be triggered. Each time the listener thread accepts a new connection, and creates new sockets, these are signaled to the poller thread, that adds them to the local list that is being polled. When the connections are effectively established, an event of type CONNECTED is detected, and the connections are considered as open (moment at which, buffers are created in order to temporarily store the relayed data).
+The poller thread works with the sockets that the listener has created (both endpoints). This thread contains a list of sockets that are periodically polled, looking for events that may be triggered. Each time the listener thread accepts a new connection, and creates new sockets, these are signaled to the poller thread, that adds them to the local list that is being polled. When the connections are effectively established, an event of type CONNECTED is detected, and the connections are considered as open (moment at which, buffers are created in order to temporarily store the relayed data).
 
 Once opened, the events that can be detected are the reception of data segments, or the end of a connection. In the first case, the sockets are queued to be treated by the worker threads. In the latter case, the connection on both endpoints will be closed.
 
 ### Worker threads
 
-The worker threads are in charge of forwarding the traffic from one endpoint of the proxy to the other. The threads are signaled by the poller when there is data ready to be relayed in at least one proxy. These proxies are placed in a queue by the poller, from which a pool of worker threads will extract them, and copy the information received on one endpoint to the other. The workers will continue to work until there are no more items in the active queue, and then will wait for a new signal by the poller.
+The worker threads are in charge of forwarding the traffic from one endpoint of the proxy to the other. The threads are signaled by the poller when there is data ready to be relayed in at least one proxy. These proxies are placed in a queue by the poller, from which a pool of worker threads will extract them, and transfer the information received on one endpoint to the other. The workers will continue to work until there are no more items in the active queue, and then will wait for a new signal by the poller.
 
 ### Timer scheduler
 

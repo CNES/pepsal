@@ -99,14 +99,12 @@ garbage_connections_collector(int pending_conn_lifetime, int epoll_fd)
     list_for_each_safe(&GET_SYNTAB()->conns, item, safe)
     {
         proxy = list_entry(item, struct pep_proxy, lnode);
-        if (proxy->status != PST_PENDING) {
-            continue;
-        }
-
-        t_diff = t_now - proxy->syn_time;
-        if (t_diff >= pending_conn_lifetime) {
-            PEP_DEBUG_DP(proxy, "Marked as garbage. Destroying...");
-            destroy_proxy(proxy, epoll_fd);
+        if (proxy->status == PST_PENDING || proxy->status == PST_PENDING_IN) {
+            t_diff = t_now - proxy->syn_time;
+            if (t_diff >= pending_conn_lifetime) {
+                PEP_DEBUG_DP(proxy, "Marked as garbage. Destroying...");
+                destroy_proxy(proxy, epoll_fd);
+            }
         }
     }
 
