@@ -43,7 +43,7 @@ void __pep_error(const char* function, int line, const char* fmt, ...)
     fprintf(stderr, "%s\n         AT: %s:%d\n", buf, function, line);
     va_end(ap);
 #else
-void __pep_error(const char*, int, const char*, ...)
+void __pep_error(__attribute__((unused)) const char* function, __attribute__((unused)) int line, __attribute__((unused)) const char* fmt, ...)
 {
 #endif
     exit(EXIT_FAILURE);
@@ -65,7 +65,7 @@ void __pep_warning(const char* function, int line, const char* fmt, ...)
     fprintf(stderr, "%s\n       AT: %s:%d\n", buf, function, line);
     va_end(ap);
 #else
-void __pep_warning(const char*, int, const char*, ...)
+void __pep_warning(__attribute__((unused)) const char* function, __attribute__((unused)) int line, __attribute__((unused)) const char* fmt, ...)
 {
 #endif
 }
