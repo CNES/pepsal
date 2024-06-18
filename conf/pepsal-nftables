@@ -1,0 +1,113 @@
+#!/bin/bash
+
+# Script to aid the configuration of nftables for use with PEPSal
+
+
+DEFAULT_TABLE_NUMBER=100
+DEFAULT_PROXY_MARK=200
+DEFAULT_DONE_MARK=201
+
+
+initialize-tables()
+{
+    # Load PEPSal conf
+    local port=$(systemctl show -p Environment pepsal | sed -r 's/[[:alnum:]_]+=/\n&/g' | awk -F= '$1=="port"{print $2}')
+
+    # Check if lookup table for fwmark 1 exists
+    TABLE=$(ip rule | grep "from all fwmark 0x1 lookup" | awk '{print $NF}')
+    if [ -z $TABLE ]
+    then
+        TABLE=${DEFAULT_TABLE_NUMBER}
+        ip rule add fwmark ${DEFAULT_PROXY_MARK} lookup ${TABLE} || error
+    fi
+    TABLE6=$(ip -6 rule | grep "from all fwmark 0x1 lookup" | awk '{print $NF}')
+    if [ -z $TABLE6 ]
+    then
+        TABLE6=${DEFAULT_TABLE_NUMBER}
+        ip -6 rule add fwmark ${DEFAULT_PROXY_MARK} lookup ${TABLE6} || error
+    fi
+
+    # Check if default route in table exists
+    RET=$(ip route list table ${TABLE} | grep default)
+    if [ x"$RET" = "x" ]
+    then
+        ip route add local 0.0.0.0/0 dev lo table ${TABLE}
+    else
+        ip route change local 0.0.0.0/0 dev lo table ${TABLE}
+    fi
+    RET=$(ip -6 route list table ${TABLE6} | grep default)
+    if [ x"$RET" = "x" ]
+    then
+        ip -6 route add local ::/0 dev lo table ${TABLE}
+    else
+        ip -6 route change local ::/0 dev lo table ${TABLE}
+    fi
+
+    cat << EOF | nft -f -
+flush ruleset
+
+table inet mangle {
+	chain INTERCEPT {
+		meta protocol ip meta l4proto tcp tproxy ip to 127.0.0.1:${port} meta mark set ct mark accept
+		meta protocol ip6 meta l4proto tcp tproxy ip6 to [::1]:${port} meta mark set ct mark accept
+	}
+
+	chain PREROUTING {
+		type filter hook prerouting priority mangle; policy accept;
+		ct mark ${DEFAULT_DONE_MARK} accept
+		ct mark ${DEFAULT_PROXY_MARK} jump INTERCEPT
+		ct mark set ${DEFAULT_DONE_MARK} accept
+	}
+}
+EOF
+}
+
+addiface-nftables()
+{
+    local has_nftable=$(nft list ruleset)
+    if test -n "$has_nftable"; then
+        initialize-tables
+    fi
+
+    local has_if_rule=$(nft list ruleset | grep "iifname \"$1\"")
+    if test -n "$has_if_rule"; then
+        local jump_handle=$(nft -a list ruleset | grep -m1 "jump INTERCEPT" | awk '{print $NF}')
+        nft add rule inet mangle PREROUTING handle "$jump_handle" iifname "$1" meta l4proto tcp ct mark set ${DEFAULT_PROXY_MARK} jump INTERCEPT
+    fi
+}
+
+deliface-iptables()
+{
+    local if_handle=$(nft -a list ruleset | grep "iifname \"$1\"" | awk '{print $NF}')
+    if test -n "$has_if_handle"; then
+        # Nothing to do, interface not present in nftables
+    else
+        nft delete rule inet mangle PREROUTING handle "$if_handle"
+    fi
+}
+
+error()
+{
+	echo "Error!" >&2 && exit 1
+}
+
+usage()
+{
+	# TODO: add options to add IP addresses (src or dst)
+	echo "Usage: $0 [-h] (addiface|deliface) [args]" >&2
+	echo "  addiface iface           redirect incoming traffic to iface to PEPSal" >&2
+	echo "  deliface iface           remove iptables entry related to iface" >&2
+	exit 1
+}
+
+case "$1" in
+	addiface)
+		addiface-iptables $2
+		;;
+	deliface)
+		deliface-iptables $2
+		;;
+	*)
+		usage
+		;;
+esac

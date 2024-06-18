@@ -45,6 +45,10 @@ pepsal \- Performance Enhancing Proxy for Satellite Links
 [ 
 .B \-q   
 .I  Queuenum
+]
+[
+.B \-s
+.I SNAT address
 ] 
 .br
 .SH DESCRIPTION
@@ -66,6 +70,9 @@ from the clients. See the example iptables script for the default configuration.
 .TP
 .B \-d
 Daemon mode: run pepsal in background
+.TP
+.B \-s "\fISNAT Address\fP"
+Specify the SNAT address to use. By default, use the packet source address.
 .TP
 .B \-q "\fIQueuenum\fP"
 specify the netfilter queue to be used to spoof SYN packets incoming from the client network.

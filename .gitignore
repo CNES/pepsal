@@ -1,6 +1,7 @@
 # C extentions
 *.so
 *.o
+*~
 
 # Autotools
 Makefile
@@ -17,14 +18,15 @@ stamp-h1
 .deps
 config.log
 config.status
+config.guess
+config.sub
 ltmain.sh
 config.h
 config.h.in
 
+.vscode
 src/pepsal
-debian/pepsal
-debian/files
-debian/tmp
+debian/
 *.substvars
 *.debhelper*
 *.libs

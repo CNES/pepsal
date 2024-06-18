@@ -5,8 +5,22 @@ After=systemd-journald-dev-log.socket
 
 [Service]
 Type=forking
-ExecStartPre=/etc/pepsal/pepsal-arguments
-ExecStart=/bin/sh -ac ". /etc/pepsal/.pepsal.conf ; sh /etc/pepsal/start.ini"
+Environment="debug=true"
+Environment="port=5000"
+Environment="max_conns=2000"
+Environment="pending_lifetime=18000"
+Environment="gc_interval=54000"
+Environment="threads=10"
+Environment="fastopen=false"
+Environment="quickack=false"
+Environment="nodelay=false"
+Environment="cork=false"
+Environment="mss="
+Environment="congestion_control="
+Environment="interface="
+Environment="log_file=/var/log/pepsal/connections.log"
+ExecStartPre=/bin/sh -c 'mkdir -p $(dirname ${log_file})'
+ExecStart=/bin/sh -c '/usr/bin/pepsal -d $([ x"$debug" = x"true" ] && echo "-v") -p ${port} -c ${max_conns} -l ${log_file} -t ${pending_lifetime} -g ${gc_interval} -T ${threads} $([ x"$fastopen" = x"true" ] && echo "-f") $([ x"$quickack" = x"true" ] && echo "-q") $([ x"$nodelay" = x"true" ] && echo "-n") $([ x"$cork" = x"true" ] && echo "-k") ${mss:+-m $mss} ${congestion_control:+-C $congestion_control} ${interface:+-s $interface} $(pid=$(systemctl show -p MainPID connmonitor | awk -F= '"'"'{print $NF}'"'"'); [ "$pid" != "0" ] && echo "-M $pid")'
 
 [Install]
 WantedBy=multi-user.target

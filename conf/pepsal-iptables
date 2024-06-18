@@ -1,54 +1,71 @@
 #!/bin/bash
 
-# Script to aid the configuration of iptables for use
+# Script to aid the configuration of ip6tables for use
 # with PEPSal
+
 
 DEFAULT_TABLE_NUMBER=100
 
+
 load-conf()
 {
-	# Load PEPSal conf
-	/etc/pepsal/pepsal-arguments
-	[ -r /etc/pepsal/.pepsal.conf ] && . /etc/pepsal/.pepsal.conf
+    # Load PEPSal conf
+    port=$(systemctl show -p Environment pepsal | sed -r 's/[[:alnum:]_]+=/\n&/g' | awk -F= '$1=="port"{print $2}')
 }
 
 route-table()
 {
-	# Check if lookup table for fwmark 1 exists
-	TABLE=$(ip rule | grep "from all fwmark 0x1 lookup" | awk '{print $NF}')
-	if [ -z $TABLE ]
-	then
-		TABLE=${DEFAULT_TABLE_NUMBER}
-		ip rule add fwmark 1 lookup ${TABLE} || error
-	fi
-	# Check if default route in table exists
-	RET=$(ip route list table ${TABLE} | grep default)
-	if [ "x$RET" = "x" ]
-	then
-		ip route add local 0.0.0.0/0 dev lo table ${TABLE}
-	else
-		ip route change local 0.0.0.0/0 dev lo table ${TABLE}
-	fi
+    # Check if lookup table for fwmark 1 exists
+    TABLE=$(ip rule | grep "from all fwmark 0x1 lookup" | awk '{print $NF}')
+    if [ -z $TABLE ]
+    then
+        TABLE=${DEFAULT_TABLE_NUMBER}
+        ip rule add fwmark 1 lookup ${TABLE} || error
+    fi
+    TABLE6=$(ip -6 rule | grep "from all fwmark 0x1 lookup" | awk '{print $NF}')
+    if [ -z $TABLE6 ]
+    then
+        TABLE6=${DEFAULT_TABLE_NUMBER}
+        ip -6 rule add fwmark 1 lookup ${TABLE6} || error
+    fi
+
+    # Check if default route in table exists
+    RET=$(ip route list table ${TABLE} | grep default)
+    if [ x"$RET" = "x" ]
+    then
+        ip route add local 0.0.0.0/0 dev lo table ${TABLE}
+    else
+        ip route change local 0.0.0.0/0 dev lo table ${TABLE}
+    fi
+    RET=$(ip -6 route list table ${TABLE6} | grep default)
+    if [ x"$RET" = "x" ]
+    then
+        ip -6 route add local ::/0 dev lo table ${TABLE}
+    else
+        ip -6 route change local ::/0 dev lo table ${TABLE}
+    fi
 }
 
 addiface-iptables()
 {
 	# Check if the rule exists, otherwise, add it
 	IFACE=$1
-	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
-	iptables -A PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 || error 	
+	ip6tables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
+	ip6tables -A PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error 	
+
+	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
+	iptables -A PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error 	
 }
 
 deliface-iptables()
 {
-	# Check if the rule exists, otherwise, add it
+	# Check if the rule exists, then, delete it
 	IFACE=$1
-	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 2>/dev/null && exit 0
-	iptables -D PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY \
-		--on-port ${port} --tproxy-mark 1 || error 	
+	ip6tables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null || exit 0
+	ip6tables -D PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error 
+
+	iptables -C PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 2>/dev/null || exit 0
+	iptables -D PREROUTING -t mangle -i ${IFACE} -p tcp -j TPROXY --on-port ${port} --tproxy-mark 1 || error	
 }
 
 error()
@@ -79,4 +96,3 @@ case "$1" in
 		usage
 		;;
 esac
-
