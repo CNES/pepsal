@@ -45,7 +45,7 @@ setup_socket(int fd)
 
 /* An empty signal handler. It is only needed to interrupt poll() */
 static void
-poller_sighandler(int)
+poller_sighandler(__attribute__((unused)) int signum)
 {
     /*
      * Do not use PEP_DEBUG here, as both syslog and fprintf are
