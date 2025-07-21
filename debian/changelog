@@ -1,3 +1,9 @@
+pepsal (2.0.1) focal; urgency=low
+
+  * Minor improvements
+
+ -- PEPSal Maintainers <admin@pepsal.org>  Mon, 21 Jul 2025 11:18:42 +0200
+
 pepsal (2.0.0) focal; urgency=low
 
   * IPv6 support

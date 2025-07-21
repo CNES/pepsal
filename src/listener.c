@@ -90,12 +90,6 @@ configure_dest_socket(int socket_fd)
         return -1;
     }
 
-    optval = 64 * 1024;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVBUF, &optval, sizeof(optval)) == -1) {
-        pep_warning("Failed to set receiv buffer size option! [%s:%d]", strerror(errno), errno);
-        return -1;
-    }
-
     if (socket_opts.quickack) {
         optval = 1;
         if (setsockopt(socket_fd, IPPROTO_TCP, TCP_QUICKACK, &optval, sizeof(optval)) == -1) {
