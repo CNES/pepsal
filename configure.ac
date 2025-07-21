@@ -3,7 +3,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59e)
-AC_INIT(PEPSal, 2.0.0)
+AC_INIT(PEPSal, 2.0.1)
 AC_CONFIG_SRCDIR(src)
 AC_CONFIG_HEADER(include/config.h)
 AM_INIT_AUTOMAKE

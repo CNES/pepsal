@@ -1,3 +1,5 @@
+2.0.1: Minor improvements
+
 2.0.0: File-descriptors hitting limits bugfix, rewritten most of the code,
 improved dependencies detection with autotools. Added IPv6 support, adjustable
 number of worker threads, more TCP socket options for outgoing sockets. Using
