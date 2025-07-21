@@ -27,3 +27,11 @@ run automake --add-missing
 
 chmod +x ./configure
 ./configure --enable-fail-on-warning "$@"
+case "x$FOREIGN_ARCHITECTURE" in
+  x)
+    ./configure --enable-fail-on-warning "$@"
+    ;;
+  *)
+    ./configure --enable-fail-on-warning --host="${FOREIGN_ARCHITECTURE}" "$@"  
+    ;;
+esac
