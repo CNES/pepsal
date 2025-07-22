@@ -147,7 +147,6 @@ int configure_out_socket(struct pep_proxy* proxy, int is_ipv4)
     atomic_inc(&proxy->refcnt);
     increase_connection_count();
     assert(proxy->status == PST_PENDING);
-    SYNTAB_UNLOCK_READ();
 
     int out_fd;
     if (is_ipv4) {
@@ -260,15 +259,16 @@ void* listener_loop(void* arg)
 
         SYNTAB_LOCK_READ();
         proxy = syntab_find(&key);
+        SYNTAB_UNLOCK_READ();
 
         /*
          * If the proxy is not in the table, add the entry.
          */
         if (!proxy) {
-            SYNTAB_UNLOCK_READ();
             save_proxy_from_socket(orig_dst, cliaddr);
             SYNTAB_LOCK_READ();
             proxy = syntab_find(&key);
+            SYNTAB_UNLOCK_READ();
         }
         /*
          * If still can't find key in the table, there is an error.
@@ -276,25 +276,24 @@ void* listener_loop(void* arg)
         if (!proxy) {
             pep_warning("Can not find the connection in SYN table. "
                         "Terminating!");
-            SYNTAB_UNLOCK_READ();
             goto close_connection;
         }
 
         /* Check if received connexion is IPV6 or IPV4-mapped connexion*/
         int is_ipv4 = IN6_IS_ADDR_V4MAPPED(&cliaddr.sin6_addr);
+        lock_read_proxy(proxy);
         switch (proxy->status) {
         case PST_PENDING:
-            out_fd = configure_out_socket(proxy, is_ipv4); // Contains SYNTAB_UNLOCK_READ();
+            out_fd = configure_out_socket(proxy, is_ipv4);
             if (out_fd < 0) {
                 goto close_connection;
             }
             break;
         case PST_PENDING_IN:
             out_fd = proxy->dst.fd;
-            SYNTAB_UNLOCK_READ();
             break;
         default:
-            SYNTAB_UNLOCK_READ();
+            unlock_read_proxy(proxy);
             goto close_connection;
         }
 
@@ -317,6 +316,7 @@ void* listener_loop(void* arg)
             toip6(ipbuf, proxy->dst.addr);
             if (getaddrinfo(ipbuf, port_str, &hints, &host_res) != 0) {
                 pep_warning("Failed to get host %s!", ipbuf);
+                unlock_read_proxy(proxy);
                 goto close_connection;
             }
 
@@ -341,15 +341,19 @@ void* listener_loop(void* arg)
 
             freeaddrinfo(host_res);
         }
+
+        unlock_read_proxy(proxy);
         if ((ret < 0) && !nonblocking_err_p()) {
             pep_warning("Failed to connect! [%s:%d]", strerror(errno), errno);
             goto close_connection;
         }
 
+        lock_write_proxy(proxy);
         proxy->src.fd = connfd;
         ret = epoll_ctl(args->epoll_fd, EPOLL_CTL_ADD, connfd, &proxy->src.epoll_event);
         if (ret < 0) {
             pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+            unlock_write_proxy(proxy);
             goto close_connection;
         }
 
@@ -357,15 +361,18 @@ void* listener_loop(void* arg)
         ret = epoll_ctl(args->epoll_fd, EPOLL_CTL_ADD, out_fd, &proxy->dst.epoll_event);
         if (ret < 0) {
             pep_error("epoll_ctl [%s:%d]", strerror(errno), errno);
+            unlock_write_proxy(proxy);
             goto close_connection;
         }
 
         if (proxy->status == PST_CLOSED) {
+            unlock_write_proxy(proxy);
             unpin_proxy(proxy);
             goto close_connection;
         }
 
         proxy->status = PST_CONNECT;
+        unlock_write_proxy(proxy);
         unpin_proxy(proxy);
         PEP_DEBUG("Sending signal to poller [%d, %d]!", connfd, out_fd);
         signal_new_connection_to_poller(args->poller);
@@ -386,7 +393,9 @@ void* listener_loop(void* arg)
             close(out_fd);
         }
         if (proxy) {
+            SYNTAB_LOCK_WRITE();
             destroy_proxy(proxy, args->epoll_fd);
+            SYNTAB_UNLOCK_WRITE();
         }
     }
 

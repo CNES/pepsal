@@ -70,28 +70,28 @@ struct syntab_key {
  * @def SYNTAB_LOCK_READ
  * @brief Lock the global SYN hashtable for read accesses.
  */
-#define SYNTAB_LOCK_READ() pthread_rwlock_rdlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_LOCK_READ() do { PEP_DEBUG("SYNTAB_LOCK_READ"); pthread_rwlock_rdlock(&(GET_SYNTAB())->lock); } while(0)
 
 
 /**
  * @def SYNTAB_LOCK_WRITE
  * @brief Lock the global SYN hashtable for write accesses.
  */
-#define SYNTAB_LOCK_WRITE() pthread_rwlock_wrlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_LOCK_WRITE() do { PEP_DEBUG("SYNTAB_LOCK_WRITE"); pthread_rwlock_wrlock(&(GET_SYNTAB())->lock); } while(0)
 
 
 /**
  * @def SYNTAB_UNLOCK_READ
  * @brief Release the read lock on the global SYN hashtable.
  */
-#define SYNTAB_UNLOCK_READ() pthread_rwlock_unlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_UNLOCK_READ() do { PEP_DEBUG("SYNTAB_UNLOCK_READ"); pthread_rwlock_unlock(&(GET_SYNTAB())->lock); } while(0)
 
 
 /**
  * @def SYNTAB_UNLOCK_WRITE
  * @brief Release the write lock on the global SYN hashtable.
  */
-#define SYNTAB_UNLOCK_WRITE() pthread_rwlock_unlock(&(GET_SYNTAB())->lock)
+#define SYNTAB_UNLOCK_WRITE() do { PEP_DEBUG("SYNTAB_UNLOCK_WRITE"); pthread_rwlock_unlock(&(GET_SYNTAB())->lock); } while(0)
 
 extern struct syn_table syntab;
 

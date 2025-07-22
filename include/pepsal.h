@@ -14,6 +14,7 @@
 #include "list.h"
 #include <sys/epoll.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 
 /**
@@ -98,6 +99,7 @@ struct pep_proxy {
     time_t syn_time;
     time_t last_rxtx;
     atomic_t refcnt;
+    pthread_rwlock_t lock;
     int enqueued;
 };
 
@@ -126,5 +128,12 @@ void destroy_proxy(struct pep_proxy* proxy, int epoll_fd);
  * @param proxy - the proxy to free
  */
 void unpin_proxy(struct pep_proxy* proxy);
+
+
+void lock_read_proxy(struct pep_proxy* proxy);
+void unlock_read_proxy(struct pep_proxy* proxy);
+void lock_write_proxy(struct pep_proxy* proxy);
+void unlock_write_proxy(struct pep_proxy* proxy);
+
 
 #endif /* !__PEPSAL_H */

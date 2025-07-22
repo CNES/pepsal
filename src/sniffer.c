@@ -326,6 +326,7 @@ parse_ethernet_header(struct ether_header* packet, uint16_t* ether_type)
 static inline void
 analyse_packet(const struct sockaddr_ll* source, const unsigned char* packet, ssize_t pkt_length, int epoll_fd)
 {
+    PEP_DEBUG("New connection intercepted, begginning parsing");
     if (source) {
         PEP_DEBUG_MAC(source->sll_addr,
             "Packet received: family %d, protocol %d, interface index %d, ARP type %d, packet type %d",
@@ -344,6 +345,7 @@ analyse_packet(const struct sockaddr_ll* source, const unsigned char* packet, ss
         .tc = 0,
     };
     struct pep_proxy* proxy = alloc_proxy();
+    lock_write_proxy(proxy);
     uint8_t protocol = 0;
     switch (ether_type) {
     case 0x0800:
@@ -378,38 +380,46 @@ analyse_packet(const struct sockaddr_ll* source, const unsigned char* packet, ss
 
         struct syntab_key key;
         syntab_format_key(proxy, &key);
+        unlock_write_proxy(proxy);
         unpin_proxy(proxy);
         SYNTAB_LOCK_READ();
         proxy = syntab_find(&key);
+        SYNTAB_UNLOCK_READ();
         /*
          * If still can't find key in the table, there is an error.
          */
         if (!proxy) {
             pep_warning("Can not find the connection in SYN table. "
                         "Terminating!");
-            SYNTAB_UNLOCK_READ();
             return;
         }
-    } else {
-        /*
-         * We need to lock here as the 'configure_out_socket' call
-         * next will call to SYNTAB_UNLOCK_READ()
-         */
-        SYNTAB_LOCK_READ();
+        lock_write_proxy(proxy);
     }
 
-    int out_fd = configure_out_socket(proxy, ether_type == 0x0800);
-    if (out_fd < 0) {
-        destroy_proxy(proxy, epoll_fd);
-        return;
+    int out_fd = proxy->dst.fd;
+    enum proxy_status status = proxy->status;
+    if (status == PST_PENDING) {
+        status = PST_PENDING_IN;
+        out_fd = configure_out_socket(proxy, ether_type == 0x0800);
+        if (out_fd < 0) {
+            unlock_write_proxy(proxy);
+            SYNTAB_LOCK_WRITE();
+            destroy_proxy(proxy, epoll_fd);
+            SYNTAB_UNLOCK_WRITE();
+            return;
+        }
     }
 
     if (duplicate_ip_fields(out_fd, &duped) != 0) {
         close(out_fd);
+        unlock_write_proxy(proxy);
+        SYNTAB_LOCK_WRITE();
         destroy_proxy(proxy, epoll_fd);
+        SYNTAB_UNLOCK_WRITE();
     } else {
         proxy->dst.fd = out_fd;
-        proxy->status = PST_PENDING_IN;
+        proxy->status = status;
+        unlock_write_proxy(proxy);
     }
 }
 
@@ -459,6 +469,7 @@ sniff_packets(const char* ifname, int epoll_fd)
 #endif
 
     for (;;) {
+        PEP_DEBUG("Waiting for new connection to sniff");
 #if USE_AUXDATA
         unsigned char read_array[2048];
         struct iovec iov = {

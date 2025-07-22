@@ -23,7 +23,7 @@
 
 struct pep_proxy* alloc_proxy(void)
 {
-    int i;
+    int i, bkp;
     struct pep_endpoint* endp;
     struct pep_proxy* proxy = calloc(1, sizeof(*proxy));
 
@@ -31,6 +31,25 @@ struct pep_proxy* alloc_proxy(void)
         errno = ENOMEM;
         return NULL;
     }
+
+    pthread_rwlockattr_t attr;
+    if (pthread_rwlockattr_init(&attr) != 0) {
+        bkp = errno;
+        free(proxy);
+        errno = bkp;
+        return NULL;
+    }
+
+    if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0
+        || pthread_rwlock_init(&proxy->lock, &attr) != 0) {
+        bkp = errno;
+        pthread_rwlockattr_destroy(&attr);
+        free(proxy);
+        errno = bkp;
+        return NULL;
+    }
+
+    pthread_rwlockattr_destroy(&attr);
 
     list_init_node(&proxy->lnode);
     list_init_node(&proxy->qnode);
@@ -58,13 +77,10 @@ void destroy_proxy(struct pep_proxy* proxy, int epoll_fd)
         return;
     }
 
-    proxy->status = PST_CLOSED;
     PEP_DEBUG_DP(proxy, "Destroy proxy");
 
-    SYNTAB_LOCK_WRITE();
     syntab_delete(proxy);
     proxy->status = PST_CLOSED;
-    SYNTAB_UNLOCK_WRITE();
 
     for (i = 0; i < PROXY_ENDPOINTS; i++) {
         if (proxy->endpoints[i].fd >= 0) {
@@ -89,4 +105,28 @@ void unpin_proxy(struct pep_proxy* proxy)
         assert(atomic_read(&proxy->refcnt) == 0);
         free(proxy);
     }
+}
+
+void lock_read_proxy(struct pep_proxy* proxy)
+{
+    PEP_DEBUG("READ lock for proxy with port %u", proxy->src.port);
+    pthread_rwlock_rdlock(&proxy->lock);
+}
+
+void unlock_read_proxy(struct pep_proxy* proxy)
+{
+    PEP_DEBUG("READ unlock for proxy with port %u", proxy->src.port);
+    pthread_rwlock_unlock(&proxy->lock);
+}
+
+void lock_write_proxy(struct pep_proxy* proxy)
+{
+    PEP_DEBUG("WRITE lock for proxy with port %u", proxy->src.port);
+    pthread_rwlock_wrlock(&proxy->lock);
+}
+
+void unlock_write_proxy(struct pep_proxy* proxy)
+{
+    PEP_DEBUG("WRITE unlock for proxy with port %u", proxy->src.port);
+    pthread_rwlock_unlock(&proxy->lock);
 }
