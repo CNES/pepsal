@@ -1,3 +1,5 @@
+2.0.2: Fix data race when sniffing packets for ToS duplication
+
 2.0.1: Minor improvements
 
 2.0.0: File-descriptors hitting limits bugfix, rewritten most of the code,

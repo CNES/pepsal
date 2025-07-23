@@ -3,7 +3,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59e)
-AC_INIT(PEPSal, 2.0.1)
+AC_INIT(PEPSal, 2.0.2)
 AC_CONFIG_SRCDIR(src)
 AC_CONFIG_HEADER(include/config.h)
 AM_INIT_AUTOMAKE
@@ -97,6 +97,7 @@ fi
 
 if test x${enable_debug} = xno; then
     AC_DEFINE([NDEBUG], 1, "Disable assertions")
+    AC_SUBST(CFLAGS, "-g0 -O3")
 fi
 
 if test x${enable_syslog} != xno; then
