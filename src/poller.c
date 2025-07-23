@@ -17,6 +17,7 @@
 #include "log.h"
 #include "pepqueue.h"
 #include "pepsal.h"
+#include "syntab.h"
 
 #include <fcntl.h>
 #include <signal.h>
@@ -123,7 +124,9 @@ void* poller_loop(void* arg)
 
                 getsockopt(proxy->dst.fd, SOL_SOCKET, SO_ERROR, &connerr, &errlen);
                 if (connerr != 0) {
+                    SYNTAB_LOCK_WRITE();
                     destroy_proxy(proxy, args->epoll_fd);
+                    SYNTAB_UNLOCK_WRITE();
                     break;
                 }
 
@@ -150,7 +153,9 @@ void* poller_loop(void* arg)
                         list_del(&proxy->qnode);
                     }
 
+                    SYNTAB_LOCK_WRITE();
                     destroy_proxy(proxy, args->epoll_fd);
+                    SYNTAB_UNLOCK_WRITE();
                     continue;
                 }
 
@@ -208,8 +213,10 @@ void* poller_loop(void* arg)
                 endp = &proxy->endpoints[i];
                 iostat = endp->iostat;
                 if ((iostat & PEP_IOERR) || (iostat & PEP_IOEOF)) {
+                    SYNTAB_LOCK_WRITE();
                     list_del(&proxy->qnode);
                     destroy_proxy(proxy, args->epoll_fd);
+                    SYNTAB_UNLOCK_WRITE();
                     break;
                 }
 

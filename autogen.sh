@@ -26,7 +26,6 @@ run autoheader
 run automake --add-missing
 
 chmod +x ./configure
-./configure --enable-fail-on-warning "$@"
 case "x$FOREIGN_ARCHITECTURE" in
   x)
     ./configure --enable-fail-on-warning "$@"

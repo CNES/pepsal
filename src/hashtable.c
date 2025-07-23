@@ -1,6 +1,7 @@
 /* Copyright (C) 2004 Christopher Clark <firstname.lastname@cl.cam.ac.uk> */
 /* $Id: hashtable.c 564 2008-08-01 16:59:25Z mtm $ */
 
+#include "log.h"
 #include "hashtable.h"
 #include "hashtable_private.h"
 #include <math.h>
@@ -170,8 +171,10 @@ hashtable_search(struct hashtable* h, void* k)
     unsigned int hashvalue, hindex;
     hashvalue = hash(h, k);
     hindex = indexFor(h->tablelength, hashvalue);
+    PEP_DEBUG("Hash value: %u, Hindex: %u", hashvalue, hindex);
     e = h->table[hindex];
     while (NULL != e) {
+        PEP_DEBUG("Pointer retrieved = %p, next = %p", e, e->next);
         /* Check hash value to short circuit heavier comparison */
         if ((hashvalue == e->h) && (h->eqfn(k, e->k)))
             return e->v;

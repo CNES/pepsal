@@ -97,6 +97,7 @@ fi
 
 if test x${enable_debug} = xno; then
     AC_DEFINE([NDEBUG], 1, "Disable assertions")
+    AC_SUBST(CFLAGS, "-g0 -O3")
 fi
 
 if test x${enable_syslog} != xno; then
