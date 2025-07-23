@@ -1,3 +1,9 @@
+pepsal (2.0.2) focal; urgency=low
+
+  * Fix data race when sniffing packets for ToS duplication
+
+ -- PEPSal Maintainers <admin@pepsal.org>  Wed, 23 Jul 2025 16:22:27 +0200
+
 pepsal (2.0.1) focal; urgency=low
 
   * Minor improvements
